@@ -1,0 +1,5 @@
+# Compiled binary
+/crypt
+
+# goreleaser output
+/dist/

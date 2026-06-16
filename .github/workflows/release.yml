@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, sign, notarize, and publish
+    runs-on: macos-latest
+    env:
+      MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+      MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+      NOTARIZATION_USERNAME: ${{ secrets.NOTARIZATION_USERNAME }}
+      NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+      NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Create or update release tag
+        run: |
+          branch="${GITHUB_REF_NAME}"
+
+          if [[ "$branch" == "edge" ]]; then
+            # GoReleaser requires semver tags; keep the GitHub release named "edge".
+            tag="v0.0.0-edge"
+          elif [[ "$branch" == release/* ]]; then
+            tag="${branch#release/}"
+          else
+            echo "Unsupported branch for release: $branch"
+            echo "Expected 'edge' or 'release/<version>' (e.g. release/v0.1.0)"
+            exit 1
+          fi
+
+          git tag -d "$tag" 2>/dev/null || true
+          git tag "$tag" "$GITHUB_SHA"
+
+          git push origin ":refs/tags/$tag" 2>/dev/null || true
+          git push origin "refs/tags/$tag" --force
+
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "Created tag $tag at $GITHUB_SHA"
+
+      - name: Delete existing GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Deleting existing release for tag $RELEASE_TAG"
+            gh release delete "$RELEASE_TAG" --yes --cleanup-tag=false
+          else
+            echo "No existing release for tag $RELEASE_TAG"
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up signing keychain
+        run: |
+          certificate_path="$RUNNER_TEMP/goreleaser.p12"
+          keychain_path="$RUNNER_TEMP/goreleaser.keychain-db"
+          keychain_password=$(openssl rand -base64 32)
+
+          if [[ -z "$MACOS_SIGN_P12" ]]; then
+            echo "MACOS_SIGN_P12 secret is not set"
+            exit 1
+          fi
+
+          if ! printf '%s' "$MACOS_SIGN_P12" | tr -d '[:space:]' | base64 --decode > "$certificate_path"; then
+            echo "Failed to base64-decode MACOS_SIGN_P12"
+            exit 1
+          fi
+
+          if [[ ! -s "$certificate_path" ]]; then
+            echo "MACOS_SIGN_P12 decoded to an empty file"
+            exit 1
+          fi
+
+          if ! openssl pkcs12 -in "$certificate_path" -noout -passin "pass:${MACOS_SIGN_PASSWORD}" 2>/dev/null; then
+            echo "MACOS_SIGN_P12 is not a valid PKCS#12 file, or MACOS_SIGN_PASSWORD is incorrect"
+            echo "Re-create the secret with: base64 -i Certificates.p12 | pbcopy"
+            exit 1
+          fi
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+
+          security import "$certificate_path" \
+            -P "$MACOS_SIGN_PASSWORD" \
+            -A \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path" > /dev/null 2>&1
+          security list-keychain -d user -s "$keychain_path"
+
+          echo "KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
+        run: |
+          gpg_home="$RUNNER_TEMP/gpg"
+          mkdir -p "$gpg_home"
+          chmod 700 "$gpg_home"
+
+          printf '%s\n' 'pinentry-mode loopback' 'batch' > "$gpg_home/gpg.conf"
+          printf '%s\n' 'allow-loopback-pinentry' > "$gpg_home/gpg-agent.conf"
+
+          gpgconf --homedir "$gpg_home" --kill gpg-agent 2>/dev/null || true
+
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --homedir "$gpg_home" \
+            --import --passphrase "$GPG_PASSWORD" --pinentry-mode loopback
+
+          fingerprint="$(
+            gpg --homedir "$gpg_home" --batch --with-colons --list-secret-keys \
+              | awk -F: '/^sec/ { print $5; exit }'
+          )"
+          if [[ -z "$fingerprint" ]]; then
+            echo "Failed to import GPG key or determine fingerprint"
+            exit 1
+          fi
+
+          {
+            echo "GNUPGHOME=$gpg_home"
+            echo "GPG_FINGERPRINT=$fingerprint"
+          } >> "$GITHUB_ENV"
+
+          gpgconf --homedir "$gpg_home" --launch gpg-agent
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --config packaging/goreleaser.yaml
+        env:
+          GITHUB_TOKEN: ${{ env.GH_PAT }}
+          GPG_PASSWORD: ${{ env.GPG_PASSWORD }}
+          GPG_FINGERPRINT: ${{ env.GPG_FINGERPRINT }}
+          GNUPGHOME: ${{ env.GNUPGHOME }}

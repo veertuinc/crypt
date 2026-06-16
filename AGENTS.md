@@ -1,0 +1,1 @@
+- Never create commits with "Co-authored-by: Cursor"

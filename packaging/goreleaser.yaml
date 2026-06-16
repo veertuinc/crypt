@@ -1,0 +1,103 @@
+# goreleaser configuration for Crypt.
+# Run from the repo root: goreleaser release --config packaging/goreleaser.yaml
+version: 2
+
+project_name: crypt
+
+git:
+  ignore_tags:
+    - edge
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: crypt
+    main: .
+    binary: crypt
+    env:
+      - CGO_ENABLED=0
+    # Anka only runs on macOS. Mounts require Apple Silicon, but the binary is
+    # built for both architectures so it can run on Intel hosts too.
+    goos:
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/veertuinc/crypt/internal/meta.version={{ .Version }}
+      - -X github.com/veertuinc/crypt/internal/meta.commit={{ .Commit }}
+      - -X github.com/veertuinc/crypt/internal/meta.date={{ .Date }}
+    hooks:
+      post:
+        - cmd: bash packaging/sign-and-notarize.sh "{{ .Path }}" "{{ .IsSnapshot }}"
+          env:
+            - NOTARIZATION_USERNAME={{ .Env.NOTARIZATION_USERNAME }}
+            - NOTARIZATION_PASSWORD={{ .Env.NOTARIZATION_PASSWORD }}
+            - KEYCHAIN_PATH={{ .Env.KEYCHAIN_PATH }}
+            - NOTARIZATION_TEAM_ID={{ .Env.NOTARIZATION_TEAM_ID }}
+
+archives:
+  - id: crypt
+    formats:
+      - tar.gz
+    wrap_in_directory: false
+    files:
+      - none*
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+signs:
+  - artifacts: checksum
+    stdin: "{{ .Env.GPG_PASSWORD }}"
+    args:
+      - "--batch"
+      - "--yes"
+      - "--pinentry-mode"
+      - "loopback"
+      - "--passphrase-fd"
+      - "0"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+homebrew_casks:
+  - name: crypt
+    repository:
+      owner: veertuinc
+      name: crypt
+    homepage: https://github.com/veertuinc/crypt
+    description: Run coding agents inside disposable Anka macOS VMs
+    # Downloads get the quarantine bit; strip it so the signed binary runs
+    # without a Gatekeeper prompt after `brew install --cask`.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/crypt"]
+          end
+
+release:
+  github:
+    owner: veertuinc
+    name: crypt
+  name_template: '{{ if eq .Version "0.0.0-edge" }}edge{{ else }}{{ .Tag }}{{ end }}'
+  # v0.0.0-edge is the rolling edge channel, not a semver prerelease; keep it
+  # on /releases/latest so install scripts can use stable asset URLs.
+  prerelease: '{{ if eq .Version "0.0.0-edge" }}false{{ else }}auto{{ end }}'
+  replace_existing_artifacts: true
+
+changelog:
+  use: github
+  sort: asc
