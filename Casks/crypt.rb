@@ -4,11 +4,11 @@ cask "crypt" do
 
   on_macos do
     on_intel do
-      sha256 "d9fc736635ead1868bd6f6b076203decb45fcc71b4aadb5eca867a2c347e1598"
+      sha256 "cd1db6c0eb67eb244b3f783fe65d80e739204217754026e793f90623372e7e03"
       url "https://github.com/veertuinc/crypt/releases/download/v#{version}/crypt_darwin_amd64.tar.gz"
     end
     on_arm do
-      sha256 "15190924b9c7da1366238f382574eda88594d22213745f070941e792d3cc2320"
+      sha256 "e6845e5baf28738fa14eca45719323f38f264d1b92a0a13e43326be4322dbe4f"
       url "https://github.com/veertuinc/crypt/releases/download/v#{version}/crypt_darwin_arm64.tar.gz"
     end
   end
