@@ -31,7 +31,7 @@ Crypt makes them safe by confining the agent to an ephemeral VM.
 
 ## Requirements
 
-- **Anka Virtualization.** Any recent version works; **3.9 or newer** is required
+- **[Anka Virtualization](https://docs.veertu.com/anka/anka-virtualization-cli/getting-started/installing-the-anka-virtualization-package/).** Any recent version works; **3.9 or newer** is required
   when using `--mount` (host directory mounting was added in
   [Anka 3.9.0](https://docs.veertu.com/anka/whats-new/anka-3.9.0/#ability-to-mount-host-directories-inside-of-the-vm)).
 - **Apple Silicon** is required for `--mount`. Directory mounts are not supported on Intel.
