@@ -89,18 +89,18 @@ Crypt clones it for each run.
    anka stop crypt-base
    ```
 
-   > [!NOTE]
-   > Interactive sessions (`crypt claude` with no prompt) connect over SSH so the
-   > agent gets a real terminal. Crypt generates a dedicated SSH key on first use
-   > (`~/.config/crypt/id_ed25519`) and authorizes it in the clone automatically;
-   > you only need Remote Login enabled in the base VM. Crypt logs in as the
-   > `anka` user by default — override with `CRYPT_SSH_USER`.
+> [!NOTE]
+> Interactive sessions (`crypt claude` with no prompt) connect over SSH so the
+> agent gets a real terminal. Crypt generates a dedicated SSH key on first use
+> (`~/.config/crypt/id_ed25519`) and authorizes it in the clone automatically;
+> you only need Remote Login enabled in the base VM. Crypt logs in as the
+> `anka` user by default — override with `CRYPT_SSH_USER`.
 
 3. On first setup, harden network access on the base VM (recommended; requires
    Anka Enterprise). Clones inherit this setting:
 
-   > [!IMPORTANT]
-   > `--no-local` is only available with an Enterprise or Enterprise Plus license.
+> [!IMPORTANT]
+> `--no-local` is only available with an Enterprise or Enterprise Plus license.
 
    ```sh
    anka modify crypt-base network --no-local
