@@ -84,8 +84,6 @@ Crypt clones it for each run.
    # Log in to each agent once so credentials are baked into the base VM:
    anka run crypt-base zsh -lc 'claude'    # follow the login prompts
    anka run crypt-base zsh -lc 'codex'     # follow the login prompts
-   # Enable Remote Login (sshd) so interactive sessions can attach over SSH:
-   anka run crypt-base sudo systemsetup -setremotelogin on
    anka stop crypt-base
    ```
 
