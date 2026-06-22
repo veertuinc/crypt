@@ -98,9 +98,21 @@ func TestGrokInjectFlags(t *testing.T) {
 		t.Fatalf("Get(grok): %v", err)
 	}
 	got := a.Command([]string{"fix the test"})
-	want := []string{"grok", "--always-approve", "fix the test"}
+	want := []string{
+		"grok",
+		"--always-approve",
+		"--output-format", "plain",
+		"-p",
+		"fix the test",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Command() = %v, want %v", got, want)
+	}
+
+	got = a.Command(nil)
+	want = []string{"grok", "--always-approve"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(nil) = %v, want %v", got, want)
 	}
 }
 

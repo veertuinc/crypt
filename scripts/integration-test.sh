@@ -4,21 +4,24 @@
 # Exercises each command/flag combination that matters in practice. Requires:
 #   - anka on PATH with a prepared base VM (Remote Login enabled for interactive)
 #   - ./crypt built (or set CRYPT_BIN)
-#   - claude installed in the base VM (agent tests skip if missing)
-#   - expect on PATH (optional; interactive tests use bash + signals)
+#   - agents installed in the base VM (suites skip when missing)
 #
 # Usage:
+#   make integration-test                   # build + run (recommended)
 #   ./scripts/integration-test.sh
+#   CRYPT_AGENTS=grok ./scripts/integration-test.sh
 #   CRYPT_BIN=./crypt CRYPT_BASE_VM=crypt-base ./scripts/integration-test.sh
 #
 # Environment:
 #   CRYPT_BIN          path to crypt (default: repo-root/crypt)
 #   CRYPT_BASE_VM      base VM name (default: crypt-base)
-#   CRYPT_SKIP_AGENTS  set to 1 to skip claude agent tests
+#   CRYPT_AGENTS         comma-separated agents to test (default: grok)
+#   CRYPT_SKIP_AGENTS    set to 1 to skip all agent tests
 #   CRYPT_SKIP_INTERACTIVE  set to 1 to skip SSH/interactive agent tests
 #   --no-local tests run by default (requires Anka Enterprise)
 #   CRYPT_AGENT_TIMEOUT     seconds per agent task (default: 300)
 #   CRYPT_INTERACTIVE_TIMEOUT  seconds for interactive sessions (default: 300)
+#   CRYPT_SESSION_DIR      session store for this run (default: $WORK_ROOT/sessions)
 
 set -uo pipefail
 
@@ -75,27 +78,69 @@ skip_test() {
 }
 
 vm_name_from_output() {
-	grep -oE 'crypt: VM name is [^[:space:]]+' "$CRYPT_LAST_OUTPUT" | tail -1 | sed 's/crypt: VM name is //'
-}
-
-track_vm_from_output() {
-	local name
-	name="$(vm_name_from_output)"
-	[[ -n "$name" ]] && track_vm_name "$name"
+	local name=""
+	name="$(grep -oE 'crypt: VM name is [^[:space:]]+' "$CRYPT_LAST_OUTPUT" | tail -1 | sed 's/crypt: VM name is //')"
+	if [[ -n "$name" ]]; then
+		printf '%s' "$name"
+		return 0
+	fi
+	name="$(grep -oE 'crypt: using existing [^[:space:]]+' "$CRYPT_LAST_OUTPUT" | tail -1 | sed 's/crypt: using existing //')"
+	printf '%s' "$name"
 }
 
 track_vm_name() {
 	local name="$1"
 	local existing
+	[[ -z "$name" || "$name" == "$CRYPT_BASE_VM" ]] && return 0
 	for existing in "${CREATED_VM_NAMES[@]:-}"; do
 		[[ "$existing" == "$name" ]] && return 0
 	done
 	CREATED_VM_NAMES+=("$name")
 }
 
+track_vm_from_output() {
+	track_vm_name "$(vm_name_from_output)"
+}
+
+collect_vm_names_from_logs() {
+	local log_file name saved_output="${CRYPT_LAST_OUTPUT:-}"
+	for log_file in "$WORK_ROOT"/*/crypt-output.txt; do
+		[[ -f "$log_file" ]] || continue
+		CRYPT_LAST_OUTPUT="$log_file"
+		name="$(vm_name_from_output)"
+		[[ -n "$name" ]] && track_vm_name "$name"
+	done
+	CRYPT_LAST_OUTPUT="$saved_output"
+}
+
+collect_vm_names_from_sessions() {
+	local session_file name
+	[[ -n "${CRYPT_SESSION_DIR:-}" && -d "$CRYPT_SESSION_DIR" ]] || return 0
+	for session_file in "$CRYPT_SESSION_DIR"/*.name; do
+		[[ -f "$session_file" ]] || continue
+		name="$(tr -d '[:space:]' < "$session_file")"
+		track_vm_name "$name"
+	done
+}
+
 vm_exists() {
 	local name="$1"
-	anka list 2>/dev/null | grep -Fq "$name"
+	anka show "$name" >/dev/null 2>&1
+}
+
+destroy_vm_by_name() {
+	local name="$1"
+	[[ -z "$name" || "$name" == "$CRYPT_BASE_VM" ]] && return 0
+	if ! vm_exists "$name"; then
+		return 0
+	fi
+	log "cleanup: stopping and deleting VM $name"
+	anka stop --force "$name" >/dev/null 2>&1 || true
+	if anka delete --yes "$name" >/dev/null 2>&1; then
+		return 0
+	fi
+	log "cleanup: warning: failed to delete VM $name"
+	return 1
 }
 
 base_vm_running() {
@@ -181,28 +226,56 @@ new_test_dir() {
 	mkdir -p "$CURRENT_TEST_DIR"
 }
 
+CLEANUP_DONE=0
+INTERRUPTED=0
+
+# Kill background jobs (interactive crypt runs, etc.) then destroy VMs left by tests.
+cleanup_on_exit() {
+	[[ "$CLEANUP_DONE" == 1 ]] && return 0
+	CLEANUP_DONE=1
+
+	if [[ "$INTERRUPTED" == 1 ]]; then
+		log ""
+		log "Interrupted — cleaning up test VMs..."
+	fi
+
+	local job_pid
+	for job_pid in $(jobs -p 2>/dev/null); do
+		kill -INT "$job_pid" 2>/dev/null || kill -TERM "$job_pid" 2>/dev/null || true
+	done
+	wait 2>/dev/null || true
+
+	if [[ -n "${WORK_ROOT:-}" && -d "$WORK_ROOT" ]]; then
+		cleanup_vms
+		rm -rf "$WORK_ROOT"
+	fi
+}
+
+on_interrupt() {
+	INTERRUPTED=1
+	cleanup_on_exit
+	exit 130
+}
+
+install_cleanup_trap() {
+	trap cleanup_on_exit EXIT
+	trap on_interrupt INT TERM
+}
+
 cleanup_vms() {
-	local test_dir
+	local test_dir name
+
+	collect_vm_names_from_logs
+	collect_vm_names_from_sessions
+
+	# crypt destroy reads the per-directory session file when available.
 	for test_dir in "$WORK_ROOT"/*/; do
 		[[ -d "$test_dir" ]] || continue
 		( cd "$test_dir" && "$CRYPT_BIN" destroy ) >/dev/null 2>&1 || true
 	done
 
-	local name
 	for name in "${CREATED_VM_NAMES[@]:-}"; do
-		if ! vm_exists "$name"; then
-			continue
-		fi
-		log "cleanup: deleting VM $name"
-		if anka delete --yes "$name" >/dev/null 2>&1; then
-			continue
-		fi
-		# Fallback: crypt destroy when run from the matching test directory.
-		local test_dir="$WORK_ROOT/$name"
-		if [[ -d "$test_dir" ]]; then
-			( cd "$test_dir" && "$CRYPT_BIN" destroy ) >/dev/null 2>&1 || true
-		fi
-		anka delete --yes "$name" >/dev/null 2>&1 || true
+		destroy_vm_by_name "$name"
 	done
 }
 
@@ -223,7 +296,7 @@ agent_installed() {
 		started_base=true
 	fi
 
-	if ! anka run "$CRYPT_BASE_VM" /usr/bin/which "$agent" >/dev/null 2>&1; then
+	if ! anka run "$CRYPT_BASE_VM" zsh -lc "command -v $(printf '%q' "$agent")" >/dev/null 2>&1; then
 		[[ "$started_base" == true ]] && anka stop --force "$CRYPT_BASE_VM" >/dev/null 2>&1 || true
 		return 1
 	fi
@@ -463,6 +536,27 @@ test_no_local() {
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_NOLOCAL_OK" && output_contains "no-local"
 }
 
+test_task_failure_shows_stderr() {
+	run_crypt run --destroy -- /bin/sh -c 'echo CRYPT_STDERR_TEST >&2; exit 1'
+	# crypt exits 0 when the guest command fails; stderr must still reach the host.
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "CRYPT_STDERR_TEST" &&
+		output_contains "exited:" || return 1
+}
+
+test_grok_who_are_you() {
+	run_crypt grok 'who are you?'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] || return 1
+	output_not_contains "exited:" || return 1
+	output_not_contains "no output from grok" || return 1
+	grep -qvE '^crypt:' "$CRYPT_LAST_OUTPUT" || return 1
+	local vm_name
+	vm_name="$(vm_name_from_output)"
+	[[ -n "$vm_name" ]] || return 1
+	run_crypt destroy
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && assert_vm_gone "$vm_name"
+}
+
 run_agent_suite() {
 	local agent="$1"
 	if [[ "${CRYPT_SKIP_AGENTS:-}" == "1" ]]; then
@@ -472,6 +566,11 @@ run_agent_suite() {
 	if ! agent_installed "$agent"; then
 		skip_test "$agent/*" "$agent not installed in $CRYPT_BASE_VM"
 		return 0
+	fi
+
+	if [[ "$agent" == "grok" ]]; then
+		new_test_dir "grok-who"
+		run_test "grok 'who are you?' task prompt" test_grok_who_are_you
 	fi
 
 	new_test_dir "task-${agent}"
@@ -501,24 +600,28 @@ main() {
 	check_prerequisites
 
 	if [[ ! -x "$CRYPT_BIN" ]]; then
-		log "building $CRYPT_BIN"
-		( cd "$REPO_ROOT" && go build -o "$CRYPT_BIN" . ) || die "go build failed"
+		log "building $CRYPT_BIN (make build)"
+		( cd "$REPO_ROOT" && make build ) || die "make build failed"
 	fi
 
 	WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/crypt-it.XXXXXX")"
 	CURRENT_TEST_DIR="$WORK_ROOT/_cli"
-	mkdir -p "$CURRENT_TEST_DIR"
-	trap 'cleanup_vms; rm -rf "$WORK_ROOT"' EXIT
+	export CRYPT_SESSION_DIR="${CRYPT_SESSION_DIR:-$WORK_ROOT/sessions}"
+	mkdir -p "$CURRENT_TEST_DIR" "$CRYPT_SESSION_DIR"
+	install_cleanup_trap
 
 	log "crypt integration tests"
 	log "  CRYPT_BIN=$CRYPT_BIN"
 	log "  CRYPT_BASE_VM=$CRYPT_BASE_VM"
+	log "  CRYPT_AGENTS=${CRYPT_AGENTS:-grok}"
+	log "  CRYPT_SESSION_DIR=$CRYPT_SESSION_DIR"
 	log "  WORK_ROOT=$WORK_ROOT"
 
 	# CLI smoke tests (no VM run)
 	run_test "crypt --version" test_version
 	run_test "crypt --help" test_help
 	run_test "crypt claude --help" test_subcommand_help claude
+	run_test "crypt grok --help" test_subcommand_help grok
 	run_test "crypt run --help" test_subcommand_help run
 	run_test "crypt destroy --help" test_subcommand_help destroy
 
@@ -544,11 +647,26 @@ main() {
 	new_test_dir "run-nolocal"
 	run_test "run --no-local" test_no_local
 
+	new_test_dir "run-failure-stderr"
+	run_test "task failure shows guest stderr" test_task_failure_shows_stderr
+
 	new_test_dir "destroy-named"
 	run_test "destroy --name" test_destroy_named
 
-	# Agent suite (claude)
-	run_agent_suite claude
+	# Agent suites (installed agents in CRYPT_BASE_VM; override with CRYPT_AGENTS)
+	local agents=()
+	if [[ -n "${CRYPT_AGENTS:-}" ]]; then
+		IFS=',' read -r -a agents <<< "$CRYPT_AGENTS"
+	else
+		agents=(grok)
+	fi
+	local agent
+	for agent in "${agents[@]}"; do
+		agent="${agent#"${agent%%[![:space:]]*}"}"
+		agent="${agent%"${agent##*[![:space:]]}"}"
+		[[ -n "$agent" ]] || continue
+		run_agent_suite "$agent"
+	done
 
 	log ""
 	log "========================================"

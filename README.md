@@ -1,6 +1,6 @@
 # Anka Crypt
 
-Run your coding agents (Claude, Codex, ...) inside isolated, disposable Anka macOS VMs.
+Run your coding agents (Grok Build, Claude, Codex, ...) inside isolated, disposable Anka macOS VMs.
 
 Crypt clones a prepared base VM into a shadow clone, launches the agent in
 unattended ("YOLO") mode, and **keeps the clone running between sessions** so
@@ -13,7 +13,7 @@ host, so mount only directories you are willing to expose.
 ```text
    host                           Anka VM (kept after run)
   ┌───────────────┐   clone      ┌───────────────────────────────┐
-  │ crypt claude  │ ──────────▶  │ claude --dangerously-skip-... │
+  │ crypt grok    │ ──────────▶  │ grok --always-approve         │
   │ --mount       │ ◀── mount ─▶ │ /Volumes/My Shared Files/$CWD │
   └───────────────┘              └───────────────────────────────┘
 ```
@@ -25,9 +25,10 @@ host, so mount only directories you are willing to expose.
 ## Why
 
 Agents run far more smoothly when they aren't stopping to ask permission for every
-file edit or shell command. The flags that unlock that (`--dangerously-skip-permissions`,
-`--dangerously-bypass-approvals-and-sandbox`) are genuinely dangerous on your host.
-Crypt makes them safe by confining the agent to an ephemeral VM.
+file edit or shell command. The flags that unlock that (`--always-approve`,
+`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`) are
+genuinely dangerous on your host. Crypt makes them safe by confining the agent to
+an ephemeral VM.
 
 ## Requirements
 
@@ -90,17 +91,24 @@ Crypt clones it for each run.
    anka run crypt-base zsh -lc 'codex-fugu'     # follow the login prompts
    # Install Grok Build (grok / agent)
    anka run crypt-base zsh -lc 'curl -fsSL https://x.ai/cli/install.sh | bash'
+   # Grok adds PATH to ~/.zshrc; Crypt uses login shells (~/.zprofile) for task runs
+   anka run crypt-base bash -c "echo 'export PATH=\"\$HOME/.grok/bin:\$PATH\"' >> ~/.zprofile"
    anka run crypt-base zsh -lc 'grok login'     # follow the login prompts
    # stop the base VM
    anka stop crypt-base
    ```
 
 > [!NOTE]
-> Interactive sessions (`crypt claude` with no prompt) connect over SSH so the
+> Interactive sessions (`crypt grok` with no prompt) connect over SSH so the
 > agent gets a real terminal. Crypt generates a dedicated SSH key on first use
 > (`~/.config/crypt/id_ed25519`) and authorizes it in the clone automatically;
 > you only need Remote Login enabled in the base VM. Crypt logs in as the
 > `anka` user by default — override with `CRYPT_SSH_USER`.
+>
+> Task-mode runs (`crypt grok "fix the test"`) and interactive SSH both launch
+> agents with `zsh -lc`, a login shell that reads `~/.zprofile`, not `~/.zshrc`.
+> If an installer only updates `~/.zshrc` (Grok does this), add its bin directory
+> to `~/.zprofile` as shown above.
 
 3. On first setup, harden network access on the base VM (recommended; requires
    Anka Enterprise). Clones inherit this setting:
@@ -118,26 +126,25 @@ Every clone Crypt makes inherits this prepared state, so you only authenticate o
 
 Two approaches:
 
-1. Use `crypt claude` to run the agent in interactive mode.
-2. Run `crypt claude "fix the UI bugs from the make test output"` for non-interactive mode.
+1. Use `crypt grok` to run the agent in interactive mode.
+2. Run `crypt grok "fix the UI bugs from the make test output"` for non-interactive mode.
 
 ```bash
-❯ crypt claude 'who are you?'
+❯ crypt grok 'who are you?'
 crypt: VM name is crypt-clone-1
 crypt: cloning crypt-base -> crypt-clone-1
 crypt: starting crypt-clone-1
 crypt: SSH: ssh anka@192.168.64.8
 crypt: VNC: open vnc://anka@192.168.64.8
-crypt: launching claude (may take a while for VM to boot)
-I'm Claude, an AI assistant built by Anthropic. In this context, I'm running as Claude Code—a tool designed to help you with software engineering tasks like writing code, debugging, refactoring, and understanding codebases.
-
-I can read and edit files, run shell commands, search through your code, create commits, and work with various development tools. I have access to your working directory at `/Users/anka` and can help you with whatever programming tasks you need.
+crypt: launching grok (may take a while for VM to boot)
+I'm Grok Build, xAI's terminal-native coding agent. I can read and edit files, run
+shell commands, search your codebase, and help with software engineering tasks.
 
 Is there something specific you'd like help with?
 crypt: kept VM crypt-clone-1 running (crypt destroy when done)
 
 
-❯ crypt claude --mount "do you see the mount in the VM under /Volumes/My Shared Files"
+❯ crypt grok --mount "do you see the mount in the VM under /Volumes/My Shared Files"
 Yes, I can see the mount! It's visible at `/Volumes/My Shared Files` and is mounted using **AppleVirtIOFS** (Apple's virtualization filesystem for sharing between host and VM).
 
 **Mount details:**

@@ -17,6 +17,13 @@ type Agent struct {
 	// runs without interactive permission prompts. These are only safe because
 	// the agent is confined to a throwaway VM.
 	InjectFlags []string
+	// TaskInjectFlags are appended to InjectFlags for task prompts only (when
+	// the user passes arguments). Use for headless flags that would break the
+	// interactive TUI, such as Grok's --output-format plain.
+	TaskInjectFlags []string
+	// PromptFlag, when set, is inserted before userArgs for task prompts (e.g.
+	// Grok's -p for headless single-prompt mode via anka run).
+	PromptFlag string
 }
 
 // registry is the single source of truth for the supported agents. Adding a
@@ -41,14 +48,18 @@ var registry = map[string]Agent{
 		InjectFlags: []string{"--dangerously-bypass-approvals-and-sandbox"},
 	},
 	"grok": {
-		Name:        "grok",
-		Summary:     "Run Grok Build in an isolated Anka VM (--always-approve)",
-		InjectFlags: []string{"--always-approve"},
+		Name:            "grok",
+		Summary:         "Run Grok Build in an isolated Anka VM (--always-approve)",
+		InjectFlags:     []string{"--always-approve"},
+		TaskInjectFlags: []string{"--output-format", "plain"},
+		PromptFlag:      "-p",
 	},
 	"agent": {
-		Name:        "agent",
-		Summary:     "Run Grok Build (agent alias) in an isolated Anka VM (--always-approve)",
-		InjectFlags: []string{"--always-approve"},
+		Name:            "agent",
+		Summary:         "Run Grok Build (agent alias) in an isolated Anka VM (--always-approve)",
+		InjectFlags:     []string{"--always-approve"},
+		TaskInjectFlags: []string{"--output-format", "plain"},
+		PromptFlag:      "-p",
 	},
 }
 
@@ -74,9 +85,16 @@ func All() []Agent {
 // Command builds the full argument vector to run inside the VM: the agent
 // executable, its injected flags, then the user's own arguments.
 func (a Agent) Command(userArgs []string) []string {
-	cmd := make([]string, 0, 1+len(a.InjectFlags)+len(userArgs))
+	inject := a.InjectFlags
+	if len(userArgs) > 0 && len(a.TaskInjectFlags) > 0 {
+		inject = append(append([]string{}, inject...), a.TaskInjectFlags...)
+	}
+	cmd := make([]string, 0, 1+len(inject)+len(userArgs)+1)
 	cmd = append(cmd, a.Name)
-	cmd = append(cmd, a.InjectFlags...)
+	cmd = append(cmd, inject...)
+	if a.PromptFlag != "" && len(userArgs) > 0 {
+		cmd = append(cmd, a.PromptFlag)
+	}
 	cmd = append(cmd, userArgs...)
 	return cmd
 }

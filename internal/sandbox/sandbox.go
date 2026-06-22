@@ -230,9 +230,16 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		// agents like Claude Code would otherwise drop into print mode.
 		runErr = runInteractiveSSH(ctx, client, clone, guestDir, ag, suppressLifecycleLogs)
 	} else {
-		// A task prompt runs unattended through anka run; no guest PTY needed.
+		// A task prompt runs unattended through anka run; wire stdio directly so
+		// guest stdout/stderr (including errors on failure) reach the terminal.
 		cmd := client.RunCommand(ctx, clone, guestDir, loginShell(ag.Command(userArgs)))
-		runErr = tty.Run(ctx, cmd)
+		var output string
+		output, runErr = tty.RunAttached(cmd)
+		if runErr != nil && !suppressLifecycleLogs {
+			if strings.TrimSpace(output) == "" {
+				fmt.Fprintf(os.Stderr, "crypt: no output from %s (check PATH in ~/.zprofile inside the VM)\n", ag.Name)
+			}
+		}
 	}
 	if runErr != nil && !suppressLifecycleLogs {
 		// A non-zero agent exit is surfaced but is not a Crypt failure.
