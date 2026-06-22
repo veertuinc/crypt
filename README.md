@@ -88,6 +88,9 @@ Crypt clones it for each run.
    # Install Sakana Fugu (codex-fugu)
    anka run crypt-base zsh -lc 'curl -fsSL https://sakana.ai/fugu/install | bash'
    anka run crypt-base zsh -lc 'codex-fugu'     # follow the login prompts
+   # Install Grok Build (grok / agent)
+   anka run crypt-base zsh -lc 'curl -fsSL https://x.ai/cli/install.sh | bash'
+   anka run crypt-base zsh -lc 'grok login'     # follow the login prompts
    # stop the base VM
    anka stop crypt-base
    ```
@@ -153,6 +156,7 @@ The mount is working and accessible.
 crypt claude --mount "keep going"                          # takes the current folder where we're executing the command and mounts that temporarily into the VM for the duration of the command
 crypt claude                                               # interactive; VM kept until crypt destroy
 crypt codex-fugu --mount "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
+crypt grok --mount "fix the failing test"                  # Grok Build
 crypt --name backend claude --mount "add endpoint"         # separate named VM for another project
 crypt claude --destroy "one-shot"                          # delete when the run ends
 crypt destroy                                              # delete the kept VM for this directory

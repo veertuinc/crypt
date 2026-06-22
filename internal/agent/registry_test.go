@@ -92,6 +92,30 @@ func TestCodexFuguInjectFlags(t *testing.T) {
 	}
 }
 
+func TestGrokInjectFlags(t *testing.T) {
+	a, err := Get("grok")
+	if err != nil {
+		t.Fatalf("Get(grok): %v", err)
+	}
+	got := a.Command([]string{"fix the test"})
+	want := []string{"grok", "--always-approve", "fix the test"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command() = %v, want %v", got, want)
+	}
+}
+
+func TestAgentAliasInjectFlags(t *testing.T) {
+	a, err := Get("agent")
+	if err != nil {
+		t.Fatalf("Get(agent): %v", err)
+	}
+	got := a.Command(nil)
+	want := []string{"agent", "--always-approve"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(nil) = %v, want %v", got, want)
+	}
+}
+
 func TestCommandDoesNotMutateInjectFlags(t *testing.T) {
 	a := Agent{Name: "claude", InjectFlags: []string{"--yolo"}}
 

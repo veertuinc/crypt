@@ -30,6 +30,7 @@ Usage:
   crypt --name backend claude --mount "add an endpoint"
   crypt --name frontend codex --mount -- "refactor the parser"
   crypt codex-fugu --mount "investigate the flaky test"
+  crypt grok --mount "fix the failing test"
   crypt --name frontend run -- /bin/bash -l
   crypt destroy                                  # or crypt --name frontend destroy
 

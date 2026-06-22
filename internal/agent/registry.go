@@ -40,6 +40,16 @@ var registry = map[string]Agent{
 		Summary:     "Run Sakana Fugu (codex-fugu) in an isolated Anka VM (--dangerously-bypass-approvals-and-sandbox)",
 		InjectFlags: []string{"--dangerously-bypass-approvals-and-sandbox"},
 	},
+	"grok": {
+		Name:        "grok",
+		Summary:     "Run Grok Build in an isolated Anka VM (--always-approve)",
+		InjectFlags: []string{"--always-approve"},
+	},
+	"agent": {
+		Name:        "agent",
+		Summary:     "Run Grok Build (agent alias) in an isolated Anka VM (--always-approve)",
+		InjectFlags: []string{"--always-approve"},
+	},
 }
 
 // Get returns the agent registered under name.
