@@ -77,13 +77,18 @@ Crypt clones it for each run.
    ```sh
    anka start crypt-base
    anka run crypt-base zsh -lc '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew install node'
+   # Install Claude (claude)
    anka run crypt-base zsh -lc 'npm install -g @anthropic-ai/claude-code'
    # Optional: set the model to use (default is latest model from anthropic)
    anka run crypt-base bash -c "echo 'export ANTHROPIC_MODEL=\"claude-sonnet-4-5-20250929\"' >> ~/.zprofile"
-   anka run crypt-base zsh -lc 'npm install -g @openai/codex'
-   # Log in to each agent once so credentials are baked into the base VM:
    anka run crypt-base zsh -lc 'claude'    # follow the login prompts
+   # Install Codex (codex)
+   anka run crypt-base zsh -lc 'npm install -g @openai/codex'
    anka run crypt-base zsh -lc 'codex'     # follow the login prompts
+   # Install Sakana Fugu (codex-fugu)
+   anka run crypt-base zsh -lc 'curl -fsSL https://sakana.ai/fugu/install | bash'
+   anka run crypt-base zsh -lc 'codex-fugu'     # follow the login prompts
+   # stop the base VM
    anka stop crypt-base
    ```
 
@@ -147,6 +152,7 @@ The mount is working and accessible.
 ```sh
 crypt claude --mount "keep going"                          # takes the current folder where we're executing the command and mounts that temporarily into the VM for the duration of the command
 crypt claude                                               # interactive; VM kept until crypt destroy
+crypt codex-fugu --mount "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
 crypt --name backend claude --mount "add endpoint"         # separate named VM for another project
 crypt claude --destroy "one-shot"                          # delete when the run ends
 crypt destroy                                              # delete the kept VM for this directory

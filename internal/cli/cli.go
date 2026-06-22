@@ -29,6 +29,7 @@ Usage:
   crypt claude --mount "fix the UI"              # VM name: project1 (from directory)
   crypt --name backend claude --mount "add an endpoint"
   crypt --name frontend codex --mount -- "refactor the parser"
+  crypt codex-fugu --mount "investigate the flaky test"
   crypt --name frontend run -- /bin/bash -l
   crypt destroy                                  # or crypt --name frontend destroy
 

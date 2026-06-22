@@ -35,6 +35,11 @@ var registry = map[string]Agent{
 		Summary:     "Run Codex in an isolated Anka VM (--dangerously-bypass-approvals-and-sandbox)",
 		InjectFlags: []string{"--dangerously-bypass-approvals-and-sandbox"},
 	},
+	"codex-fugu": {
+		Name:        "codex-fugu",
+		Summary:     "Run Sakana Fugu (codex-fugu) in an isolated Anka VM (--dangerously-bypass-approvals-and-sandbox)",
+		InjectFlags: []string{"--dangerously-bypass-approvals-and-sandbox"},
+	},
 }
 
 // Get returns the agent registered under name.

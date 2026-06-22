@@ -76,6 +76,22 @@ func TestCommandWithNoUserArgs(t *testing.T) {
 	}
 }
 
+func TestCodexFuguInjectFlags(t *testing.T) {
+	a, err := Get("codex-fugu")
+	if err != nil {
+		t.Fatalf("Get(codex-fugu): %v", err)
+	}
+	got := a.Command([]string{"fix the test"})
+	want := []string{
+		"codex-fugu",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"fix the test",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command() = %v, want %v", got, want)
+	}
+}
+
 func TestCommandDoesNotMutateInjectFlags(t *testing.T) {
 	a := Agent{Name: "claude", InjectFlags: []string{"--yolo"}}
 
