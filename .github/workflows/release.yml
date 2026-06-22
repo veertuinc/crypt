@@ -31,6 +31,7 @@ jobs:
 
           if [[ "$branch" == "edge" ]]; then
             # GoReleaser requires semver tags; keep the GitHub release named "edge".
+            # homebrew_casks skip_upload leaves the cask on the latest release/vX.X.X.
             tag="v0.0.0-edge"
           elif [[ "$branch" == release/* ]]; then
             tag="${branch#release/}"

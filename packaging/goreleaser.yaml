@@ -78,6 +78,9 @@ homebrew_casks:
       name: crypt
     homepage: https://github.com/veertuinc/crypt
     description: Run coding agents inside disposable Anka macOS VMs
+    # Edge releases publish GitHub assets only; keep the cask on the latest
+    # semver cut from release/vX.X.X.
+    skip_upload: '{{ eq .Version "0.0.0-edge" }}'
     # Downloads get the quarantine bit; strip it so the signed binary runs
     # without a Gatekeeper prompt after `brew install --cask`.
     hooks:
