@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -73,6 +74,42 @@ func (c *Client) ShowIP(ctx context.Context, vm string) (string, error) {
 		return "", fmt.Errorf("Anka has not reported an IP for %q yet; ensure the VM is running", vm)
 	}
 	return ip, nil
+}
+
+// MountEntry is one row of `anka mount <vm>` output.
+type MountEntry struct {
+	FSID            int    `json:"fsid"`
+	HostPath        string `json:"host_path"`
+	GuestFolderName string `json:"guest_folder_name"`
+	GuestPath       string `json:"guest_path"`
+}
+
+// ListMounts returns host directories currently shared with a running VM.
+func (c *Client) ListMounts(ctx context.Context, vm string) ([]MountEntry, error) {
+	body, err := c.machineReadable(ctx, "mount", vm)
+	if err != nil {
+		return nil, err
+	}
+	var entries []MountEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		return nil, fmt.Errorf("parsing mount list: %w", err)
+	}
+	return entries, nil
+}
+
+// HasMount reports whether hostPath is already shared with the VM.
+func (c *Client) HasMount(ctx context.Context, vm, hostPath string) (bool, error) {
+	entries, err := c.ListMounts(ctx, vm)
+	if err != nil {
+		return false, err
+	}
+	hostPath = filepath.Clean(hostPath)
+	for _, entry := range entries {
+		if filepath.Clean(entry.HostPath) == hostPath {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Mount shares a host directory into a running VM. Inside the guest it appears

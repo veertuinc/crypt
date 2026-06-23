@@ -100,6 +100,57 @@ exit 1
 	}
 }
 
+func TestListMountsParsesMachineReadableOutput(t *testing.T) {
+	body := `[{"fsid":1,"host_path":"/Users/dev/crypt","guest_folder_name":"crypt","guest_path":"/Volumes/My Shared Files/crypt"}]`
+	c := fakeAnka(t, `
+if [ "$1" = --machine-readable ] && [ "$2" = mount ] && [ "$3" = clone-1 ]; then
+  echo '{"status":"OK","body":`+body+`}'
+  exit 0
+fi
+echo "unexpected args: $@" >&2
+exit 1
+`)
+
+	entries, err := c.ListMounts(context.Background(), "clone-1")
+	if err != nil {
+		t.Fatalf("ListMounts() error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("ListMounts() len = %d, want 1", len(entries))
+	}
+	if entries[0].HostPath != "/Users/dev/crypt" {
+		t.Errorf("HostPath = %q, want /Users/dev/crypt", entries[0].HostPath)
+	}
+}
+
+func TestHasMountMatchesHostPath(t *testing.T) {
+	body := `[{"fsid":1,"host_path":"/Users/dev/crypt","guest_folder_name":"crypt","guest_path":"/Volumes/My Shared Files/crypt"}]`
+	c := fakeAnka(t, `
+if [ "$1" = --machine-readable ] && [ "$2" = mount ] && [ "$3" = clone-1 ]; then
+  echo '{"status":"OK","body":`+body+`}'
+  exit 0
+fi
+echo "unexpected args: $@" >&2
+exit 1
+`)
+
+	ok, err := c.HasMount(context.Background(), "clone-1", "/Users/dev/crypt")
+	if err != nil {
+		t.Fatalf("HasMount(existing) error: %v", err)
+	}
+	if !ok {
+		t.Fatal("HasMount(existing) = false, want true")
+	}
+
+	ok, err = c.HasMount(context.Background(), "clone-1", "/Users/dev/other")
+	if err != nil {
+		t.Fatalf("HasMount(missing) error: %v", err)
+	}
+	if ok {
+		t.Fatal("HasMount(missing) = true, want false")
+	}
+}
+
 func TestUnmountInvokesAnkaWithMountReference(t *testing.T) {
 	c := fakeAnka(t, `
 if [ "$1" = unmount ] && [ "$2" = clone-1 ] && [ "$3" = project ]; then

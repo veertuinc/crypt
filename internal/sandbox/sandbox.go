@@ -193,13 +193,25 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 
 	var guestDir string
 	if opts.Mount {
-		if !suppressLifecycleLogs {
-			fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", cwd)
+		alreadyMounted, err := client.HasMount(ctx, clone, cwd)
+		if err != nil {
+			return fmt.Errorf("checking mounts: %w", err)
 		}
-		if err := client.Mount(ctx, clone, cwd); err != nil {
-			return fmt.Errorf("mounting working directory: %w", err)
+		mountedThisRun := false
+		if alreadyMounted {
+			if !suppressLifecycleLogs {
+				fmt.Fprintf(os.Stderr, "crypt: %s is already mounted\n", cwd)
+			}
+		} else {
+			if !suppressLifecycleLogs {
+				fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", cwd)
+			}
+			if err := client.Mount(ctx, clone, cwd); err != nil {
+				return fmt.Errorf("mounting working directory: %w", err)
+			}
+			mountedThisRun = true
 		}
-		if shouldUnmountAfterRun(opts, running) {
+		if mountedThisRun && shouldUnmountAfterRun(opts, running) {
 			defer func() {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
 				defer cancel()
