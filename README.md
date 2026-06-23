@@ -44,7 +44,7 @@ an ephemeral VM.
 ```sh
 brew tap veertuinc/crypt https://github.com/veertuinc/crypt
 brew trust veertuinc/crypt
-brew install --cask crypt
+brew update && brew install --cask crypt
 ```
 
 Homebrew's short tap name (`veertuinc/crypt`) expects a repo named `homebrew-crypt`; the
