@@ -77,9 +77,10 @@ func TestResolveCloneNameExplicit(t *testing.T) {
 }
 
 func TestVMAccessInfoLines(t *testing.T) {
-	got := vmAccessInfoLines("anka", "192.168.64.4")
+	keyPath := "/Users/dev/Library/Application Support/crypt/keys/crypt-clone-1/id_ed25519"
+	got := vmAccessInfoLines("anka", "192.168.64.4", keyPath)
 	want := []string{
-		"crypt: SSH: ssh anka@192.168.64.4",
+		"crypt: SSH: ssh -i '/Users/dev/Library/Application Support/crypt/keys/crypt-clone-1/id_ed25519' -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 anka@192.168.64.4",
 		"crypt: VNC: open vnc://anka@192.168.64.4",
 	}
 	if !reflect.DeepEqual(got, want) {

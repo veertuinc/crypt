@@ -137,6 +137,8 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 			if plan.delete {
 				if err := client.Delete(cleanupCtx, clone); err != nil {
 					fmt.Fprintf(os.Stderr, "crypt: warning: failed to delete %s: %v\n", clone, err)
+				} else {
+					removeSSHKey(clone)
 				}
 				if opts.Name == "" {
 					clearSession(cwd)
@@ -184,7 +186,11 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "crypt: warning: could not read VM IP for %s: %v\n", clone, err)
 		} else {
-			for _, line := range vmAccessInfoLines(sshUser(), ip) {
+			keyPath, _, keyErr := ensureSSHKey(clone)
+			if keyErr != nil {
+				fmt.Fprintf(os.Stderr, "crypt: warning: could not resolve SSH key: %v\n", keyErr)
+			}
+			for _, line := range vmAccessInfoLines(sshUser(), ip, keyPath) {
 				fmt.Fprintln(os.Stderr, line)
 			}
 		}
@@ -222,13 +228,6 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		guestDir = path.Join(anka.SharedFilesRoot, dirName)
 	}
 
-	if !suppressLifecycleLogs {
-		if guestDir != "" {
-			fmt.Fprintf(os.Stderr, "crypt: launching %s in %s (may take a while for VM to boot)\n", ag.Name, guestDir)
-		} else {
-			fmt.Fprintf(os.Stderr, "crypt: launching %s (may take a while for VM to boot)\n", ag.Name)
-		}
-	}
 	conn, err := prepareSSH(ctx, client, clone, suppressLifecycleLogs)
 	if err != nil {
 		return err
@@ -237,6 +236,14 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	if ag.Name == "claude" {
 		if err := ensureClaudeWorkspaceTrust(ctx, conn, conn.user, guestDir); err != nil {
 			return fmt.Errorf("preparing claude workspace trust: %w", err)
+		}
+	}
+
+	if !suppressLifecycleLogs {
+		if guestDir != "" {
+			fmt.Fprintf(os.Stderr, "crypt: launching %s in %s\n", ag.Name, guestDir)
+		} else {
+			fmt.Fprintf(os.Stderr, "crypt: launching %s\n", ag.Name)
 		}
 	}
 
@@ -349,9 +356,9 @@ func vmIsRunning(ctx context.Context, client *anka.Client, vm string) (bool, err
 	}
 }
 
-func vmAccessInfoLines(user, ip string) []string {
+func vmAccessInfoLines(user, ip, keyPath string) []string {
 	return []string{
-		fmt.Sprintf("crypt: SSH: ssh %s@%s", user, ip),
+		fmt.Sprintf("crypt: SSH: %s", sshAccessCommand(user, ip, keyPath)),
 		fmt.Sprintf("crypt: VNC: open vnc://%s@%s", user, ip),
 	}
 }

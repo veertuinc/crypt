@@ -133,14 +133,9 @@ func (c *Client) Delete(ctx context.Context, vm string) error {
 	return c.run(ctx, "delete", "--yes", vm)
 }
 
-// CopyToGuest copies a host file into a running VM.
-func (c *Client) CopyToGuest(ctx context.Context, hostPath, vm, guestPath string) error {
-	return c.run(ctx, "cp", hostPath, vm+":"+guestPath)
-}
-
-// CopyFromGuest copies a file from a running VM onto the host.
-func (c *Client) CopyFromGuest(ctx context.Context, vm, guestPath, hostPath string) error {
-	return c.run(ctx, "cp", vm+":"+guestPath, hostPath)
+// Run executes a command inside a running VM via `anka run`.
+func (c *Client) Run(ctx context.Context, vm string, args ...string) error {
+	return c.run(ctx, append([]string{"run", vm}, args...)...)
 }
 
 // IP returns the guest's IP address for SSH access. Anka reports the clone's

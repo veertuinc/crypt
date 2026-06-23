@@ -32,5 +32,6 @@ func Destroy(ctx context.Context, baseVM, name string) error {
 	if err := client.Delete(ctx, name); err != nil {
 		return fmt.Errorf("deleting %s: %w", name, err)
 	}
+	removeSSHKey(name)
 	return nil
 }

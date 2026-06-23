@@ -27,6 +27,9 @@ const (
 	sshProbeInterval = 2 * time.Second
 )
 
+// errSSHAuthFailed means sshd accepted a connection but rejected Crypt's public key.
+var errSSHAuthFailed = errors.New("ssh public key not authorized")
+
 type sshConn struct {
 	keyPath string
 	user    string
@@ -46,7 +49,7 @@ func sshUser() string {
 func prepareSSH(ctx context.Context, client *anka.Client, vm string, suppressLifecycleLogs bool) (sshConn, error) {
 	user := sshUser()
 
-	keyPath, pubKey, err := ensureSSHKey()
+	keyPath, pubKey, err := ensureSSHKey(vm)
 	if err != nil {
 		return sshConn{}, fmt.Errorf("preparing crypt SSH key: %w", err)
 	}
@@ -58,14 +61,15 @@ func prepareSSH(ctx context.Context, client *anka.Client, vm string, suppressLif
 
 	conn := sshConn{keyPath: keyPath, user: user, ip: ip}
 
-	if err := waitForSSH(ctx, keyPath, user, ip); err != nil {
-		if bootstrapErr := bootstrapAuthorizedKey(ctx, client, vm, user, pubKey); bootstrapErr != nil {
-			return sshConn{}, fmt.Errorf(
-				"%w\n\ncrypt: add this public key to %q in crypt-base (~/.ssh/authorized_keys), stop crypt-base, and recreate clones:\n%s",
-				err, user, pubKey,
-			)
+	if err := waitForSSH(ctx, keyPath, user, ip, suppressLifecycleLogs, fmt.Sprintf("waiting for SSH on %s", userAtHost(user, ip))); err != nil {
+		if !errors.Is(err, errSSHAuthFailed) {
+			return sshConn{}, err
 		}
-		if err := waitForSSH(ctx, keyPath, user, ip); err != nil {
+		logSSHProgress(suppressLifecycleLogs, "authorizing SSH key in %s via anka run", vm)
+		if bootstrapErr := bootstrapAuthorizedKey(ctx, client, vm, user, pubKey); bootstrapErr != nil {
+			return sshConn{}, fmt.Errorf("authorizing SSH key in %s via anka run: %w", vm, bootstrapErr)
+		}
+		if err := waitForSSH(ctx, keyPath, user, ip, suppressLifecycleLogs, fmt.Sprintf("waiting for SSH on %s after authorizing key", userAtHost(user, ip))); err != nil {
 			return sshConn{}, fmt.Errorf("waiting for SSH after authorizing key: %w", err)
 		}
 	}
@@ -74,11 +78,14 @@ func prepareSSH(ctx context.Context, client *anka.Client, vm string, suppressLif
 		return sshConn{}, fmt.Errorf("authorizing SSH key in %s: %w", vm, err)
 	}
 
-	if !suppressLifecycleLogs {
-		fmt.Fprintf(os.Stderr, "crypt: connecting to %s@%s\n", user, ip)
-	}
-
 	return conn, nil
+}
+
+func logSSHProgress(suppress bool, format string, args ...any) {
+	if suppress {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "crypt: "+format+"\n", args...)
 }
 
 // runAgentSSH launches the agent inside the guest over SSH. Interactive runs
@@ -129,14 +136,12 @@ func insertSSHFlag(args []string, flag string) []string {
 	return append(out, args[1:]...)
 }
 
-// ensureSSHKey returns the path to Crypt's dedicated SSH private key and the
-// matching public key, generating the pair on first use.
-func ensureSSHKey() (keyPath, pubKey string, err error) {
-	base, err := os.UserConfigDir()
+// ensureSSHKey returns the SSH key pair dedicated to vm, generating it on first use.
+func ensureSSHKey(vm string) (keyPath, pubKey string, err error) {
+	dir, err := sshKeyDir(vm)
 	if err != nil {
 		return "", "", err
 	}
-	dir := filepath.Join(base, "crypt")
 	keyPath = filepath.Join(dir, "id_ed25519")
 	pubPath := keyPath + ".pub"
 
@@ -144,7 +149,7 @@ func ensureSSHKey() (keyPath, pubKey string, err error) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", "", err
 		}
-		gen := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "crypt", "-f", keyPath)
+		gen := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "crypt-"+vm, "-f", keyPath)
 		if out, genErr := gen.CombinedOutput(); genErr != nil {
 			return "", "", fmt.Errorf("ssh-keygen: %w (%s)", genErr, strings.TrimSpace(string(out)))
 		}
@@ -159,112 +164,89 @@ func ensureSSHKey() (keyPath, pubKey string, err error) {
 	return keyPath, strings.TrimSpace(string(pub)), nil
 }
 
-// bootstrapAuthorizedKey seeds authorized_keys via anka cp when SSH is not yet
-// available. Guest command execution always uses SSH; this file copy is only
-// for the initial key install.
-func bootstrapAuthorizedKey(ctx context.Context, client *anka.Client, vm, user, pubKey string) error {
-	sshDir := filepath.Join("/Users", user, ".ssh")
-	authFile := filepath.Join(sshDir, "authorized_keys")
-
-	dir, err := os.MkdirTemp("", "crypt-authorized-keys-*")
+func sshKeyDir(vm string) (string, error) {
+	root, err := sshKeysRoot()
 	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-
-	localAuth := filepath.Join(dir, "authorized_keys")
-	existing := filepath.Join(dir, "existing")
-	if err := client.CopyFromGuest(ctx, vm, authFile, existing); err == nil {
-		content, readErr := os.ReadFile(existing)
-		if readErr != nil {
-			return readErr
-		}
-		if err := os.WriteFile(localAuth, content, 0o600); err != nil {
-			return err
-		}
-	} else if !isMissingGuestPath(err) {
-		return err
-	} else if err := os.WriteFile(localAuth, nil, 0o600); err != nil {
-		return err
-	}
-
-	merged, err := mergeAuthorizedKey(localAuth, pubKey)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(localAuth, []byte(merged), 0o600); err != nil {
-		return err
-	}
-
-	if err := client.CopyToGuest(ctx, localAuth, vm, authFile); err != nil {
-		return err
-	}
-	return nil
-}
-
-func isMissingGuestPath(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "no such file") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "does not exist")
-}
-
-func mergeAuthorizedKey(path, pubKey string) (string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
-	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
-	for _, line := range lines {
-		if strings.TrimSpace(line) == pubKey {
-			return strings.TrimRight(string(content), "\n") + "\n", nil
-		}
+	return filepath.Join(root, vm), nil
+}
+
+func sshKeysRoot() (string, error) {
+	if dir := os.Getenv("CRYPT_KEYS_DIR"); dir != "" {
+		return dir, nil
 	}
-	if len(lines) == 1 && lines[0] == "" {
-		return pubKey + "\n", nil
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
 	}
-	if len(content) > 0 && !strings.HasSuffix(string(content), "\n") {
-		return string(content) + "\n" + pubKey + "\n", nil
+	return filepath.Join(base, "crypt", "keys"), nil
+}
+
+// removeSSHKey deletes the SSH key pair stored for vm.
+func removeSSHKey(vm string) {
+	dir, err := sshKeyDir(vm)
+	if err != nil {
+		return
 	}
-	return string(content) + pubKey + "\n", nil
+	_ = os.RemoveAll(dir)
+}
+
+// bootstrapAuthorizedKey appends Crypt's public key to authorized_keys via
+// anka run when key-based SSH is not yet available.
+func bootstrapAuthorizedKey(ctx context.Context, client *anka.Client, vm, user, pubKey string) error {
+	return client.Run(ctx, vm, "zsh", "-lc", authorizedKeyScript(user, pubKey))
 }
 
 // ensureAuthorizedKey appends Crypt's public key to authorized_keys over SSH.
 func ensureAuthorizedKey(ctx context.Context, conn sshConn, pubKey string) error {
-	home := "/Users/" + conn.user
+	return runSSHScript(ctx, conn, authorizedKeyScript(conn.user, pubKey))
+}
+
+func authorizedKeyScript(user, pubKey string) string {
+	home := "/Users/" + user
 	sshDir := home + "/.ssh"
 	authFile := sshDir + "/authorized_keys"
 	quotedKey := shellQuote(pubKey)
 
-	script := strings.Join([]string{
+	return strings.Join([]string{
 		"set -e",
 		"mkdir -p " + sshDir,
 		"chmod 700 " + sshDir,
 		"touch " + authFile,
 		"chmod 600 " + authFile,
 		"grep -qxF " + quotedKey + " " + authFile + " || printf '%s\\n' " + quotedKey + " >> " + authFile,
-		"chown -R " + conn.user + " " + sshDir + " 2>/dev/null || true",
+		"chown -R " + user + " " + sshDir + " 2>/dev/null || true",
 	}, "; ")
-
-	return runSSHScript(ctx, conn, script)
 }
 
 // waitForSSH blocks until an SSH connection to the guest succeeds or the
 // readiness timeout elapses.
-func waitForSSH(ctx context.Context, keyPath, user, ip string) error {
+func waitForSSH(ctx context.Context, keyPath, user, ip string, suppress bool, waitingMsg string) error {
 	deadline := time.Now().Add(sshReadyTimeout)
-	probeArgs := append(sshOptions(keyPath), userAtHost(user, ip), "true")
+	logSSHProgress(suppress, "%s", waitingMsg)
+	lastProgress := time.Now()
 
 	for {
+		probeArgs := append(sshOptions(keyPath),
+			"-o", "BatchMode=yes",
+			userAtHost(user, ip), "true",
+		)
 		probe := exec.CommandContext(ctx, "ssh", probeArgs...)
+		var errBuf bytes.Buffer
+		probe.Stderr = &errBuf
 		if err := probe.Run(); err == nil {
 			return nil
 		}
+		if isSSHAuthFailure(errBuf.String()) {
+			return errSSHAuthFailed
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for SSH on %s; enable Remote Login (sshd) in the base VM", ip)
+		}
+		if !suppress && time.Since(lastProgress) >= 15*time.Second {
+			logSSHProgress(suppress, "still %s", waitingMsg)
+			lastProgress = time.Now()
 		}
 		select {
 		case <-ctx.Done():
@@ -272,6 +254,12 @@ func waitForSSH(ctx context.Context, keyPath, user, ip string) error {
 		case <-time.After(sshProbeInterval):
 		}
 	}
+}
+
+func isSSHAuthFailure(stderr string) bool {
+	msg := strings.ToLower(stderr)
+	return strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "publickey")
 }
 
 // sshOptions are the connection flags shared by the readiness probe and guest
@@ -286,6 +274,23 @@ func sshOptions(keyPath string) []string {
 		"-o", "LogLevel=ERROR",
 		"-o", "ConnectTimeout=5",
 	}
+}
+
+// sshAccessCommand is a copy-pasteable ssh invocation using Crypt's dedicated key.
+func sshAccessCommand(user, ip, keyPath string) string {
+	if keyPath == "" {
+		return "ssh " + userAtHost(user, ip)
+	}
+	return strings.Join([]string{
+		"ssh",
+		"-i", shellQuote(keyPath),
+		"-o", "IdentitiesOnly=yes",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-o", "ConnectTimeout=5",
+		userAtHost(user, ip),
+	}, " ")
 }
 
 // remoteCommand builds the single command string SSH runs in the guest: a

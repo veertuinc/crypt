@@ -5,23 +5,17 @@ import (
 	"testing"
 )
 
-func TestCopyInvokesAnkaWithGuestPaths(t *testing.T) {
+func TestRunInvokesAnka(t *testing.T) {
 	c := fakeAnka(t, `
-if [ "$1" = cp ] && [ "$2" = host.txt ] && [ "$3" = clone-1:/Users/anka/.ssh/authorized_keys ]; then
-  exit 0
-fi
-if [ "$1" = cp ] && [ "$2" = clone-1:/Users/anka/.ssh/authorized_keys ] && [ "$3" = host.txt ]; then
+if [ "$1" = run ] && [ "$2" = clone-1 ] && [ "$3" = zsh ] && [ "$4" = -lc ]; then
   exit 0
 fi
 echo "unexpected args: $@" >&2
 exit 1
 `)
 
-	if err := c.CopyToGuest(context.Background(), "host.txt", "clone-1", "/Users/anka/.ssh/authorized_keys"); err != nil {
-		t.Fatalf("CopyToGuest() error: %v", err)
-	}
-	if err := c.CopyFromGuest(context.Background(), "clone-1", "/Users/anka/.ssh/authorized_keys", "host.txt"); err != nil {
-		t.Fatalf("CopyFromGuest() error: %v", err)
+	if err := c.Run(context.Background(), "clone-1", "zsh", "-lc", "true"); err != nil {
+		t.Fatalf("Run() error: %v", err)
 	}
 }
 

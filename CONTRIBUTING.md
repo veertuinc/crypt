@@ -115,7 +115,7 @@ real VM:
 
 - `internal/agent` — agent lookup, sorted listing, and command composition.
 - `internal/anka` — version parsing, version comparison, VM existence checks,
-  error surfacing, and `anka cp` argument construction. These tests drive a
+  error surfacing, and `anka run` argument construction. These tests drive a
   **fake `anka` shell script** written to a temp dir, so no Anka install is
   required.
 - `internal/sandbox` — clone-name sanitization, ephemeral name generation, and

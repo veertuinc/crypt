@@ -100,10 +100,11 @@ Crypt clones it for each run.
 
 > [!NOTE]
 > Interactive sessions (`crypt grok` with no prompt) connect over SSH so the
-> agent gets a real terminal. Crypt generates a dedicated SSH key on first use
-> (`~/.config/crypt/id_ed25519`) and authorizes it in the clone automatically;
-> you only need Remote Login enabled in the base VM. Crypt logs in as the
-> `anka` user by default — override with `CRYPT_SSH_USER`.
+> agent gets a real terminal. Crypt generates a dedicated SSH key per clone on
+> first use (`~/.config/crypt/keys/<vm>/id_ed25519`) and authorizes it in that
+> clone automatically via `anka run`; you only need Remote Login enabled in the
+> base VM. Crypt logs in as the `anka` user by default — override with
+> `CRYPT_SSH_USER`. Keys are removed when the clone is destroyed.
 >
 > Task-mode runs (`crypt grok "fix the test"`) and interactive SSH both launch
 > agents with `zsh -lc`, a login shell that reads `~/.zprofile`, not `~/.zshrc`.
@@ -134,9 +135,12 @@ Two approaches:
 crypt: VM name is crypt-clone-1
 crypt: cloning crypt-base -> crypt-clone-1
 crypt: starting crypt-clone-1
-crypt: SSH: ssh anka@192.168.64.8
+crypt: SSH: ssh -i '/Users/you/Library/Application Support/crypt/keys/crypt-clone-1/id_ed25519' -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 anka@192.168.64.8
 crypt: VNC: open vnc://anka@192.168.64.8
-crypt: launching grok (may take a while for VM to boot)
+crypt: mounting /Users/you/project
+crypt: waiting for SSH on anka@192.168.64.8
+crypt: authorizing SSH key in crypt-clone-1 via anka run
+crypt: launching grok
 I'm Grok Build, xAI's terminal-native coding agent. I can read and edit files, run
 shell commands, search your codebase, and help with software engineering tasks.
 

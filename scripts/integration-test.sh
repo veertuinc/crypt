@@ -449,7 +449,7 @@ test_agent_interactive() {
 	local crypt_pid=$!
 
 	while (( waited < timeout_sec )); do
-		if grep -qE 'connecting to .+@' "$output_file" 2>/dev/null; then
+		if grep -qE 'launching ' "$output_file" 2>/dev/null; then
 			break
 		fi
 		if ! kill -0 "$crypt_pid" 2>/dev/null; then
@@ -459,10 +459,10 @@ test_agent_interactive() {
 		waited=$((waited + 2))
 	done
 
-	if ! grep -qE 'connecting to .+@' "$output_file" 2>/dev/null; then
+	if ! grep -qE 'launching ' "$output_file" 2>/dev/null; then
 		kill "$crypt_pid" 2>/dev/null || true
 		wait "$crypt_pid" 2>/dev/null || true
-		log "interactive output (no SSH connect):"
+		log "interactive output (agent did not launch):"
 		tail -40 "$output_file" >&2 || true
 		return 1
 	fi
