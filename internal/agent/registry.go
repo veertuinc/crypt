@@ -22,7 +22,7 @@ type Agent struct {
 	// interactive TUI, such as Grok's --output-format plain.
 	TaskInjectFlags []string
 	// PromptFlag, when set, is inserted before userArgs for task prompts (e.g.
-	// Grok's -p for headless single-prompt mode via anka run).
+	// Grok's -p for headless single-prompt mode via SSH.
 	PromptFlag string
 }
 

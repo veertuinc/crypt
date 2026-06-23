@@ -2,29 +2,26 @@ package anka
 
 import (
 	"context"
-	"reflect"
 	"testing"
 )
 
-func TestRunCommandWithWorkdir(t *testing.T) {
-	c := &Client{binary: "anka"}
+func TestCopyInvokesAnkaWithGuestPaths(t *testing.T) {
+	c := fakeAnka(t, `
+if [ "$1" = cp ] && [ "$2" = host.txt ] && [ "$3" = clone-1:/Users/anka/.ssh/authorized_keys ]; then
+  exit 0
+fi
+if [ "$1" = cp ] && [ "$2" = clone-1:/Users/anka/.ssh/authorized_keys ] && [ "$3" = host.txt ]; then
+  exit 0
+fi
+echo "unexpected args: $@" >&2
+exit 1
+`)
 
-	cmd := c.RunCommand(context.Background(), "clone-1", "/work", []string{"zsh", "-lc", "echo hi"})
-
-	want := []string{"anka", "run", "--workdir", "/work", "clone-1", "zsh", "-lc", "echo hi"}
-	if !reflect.DeepEqual(cmd.Args, want) {
-		t.Errorf("cmd.Args = %v, want %v", cmd.Args, want)
+	if err := c.CopyToGuest(context.Background(), "host.txt", "clone-1", "/Users/anka/.ssh/authorized_keys"); err != nil {
+		t.Fatalf("CopyToGuest() error: %v", err)
 	}
-}
-
-func TestRunCommandWithoutWorkdir(t *testing.T) {
-	c := &Client{binary: "anka"}
-
-	cmd := c.RunCommand(context.Background(), "clone-1", "", []string{"bash"})
-
-	want := []string{"anka", "run", "clone-1", "bash"}
-	if !reflect.DeepEqual(cmd.Args, want) {
-		t.Errorf("cmd.Args = %v, want %v", cmd.Args, want)
+	if err := c.CopyFromGuest(context.Background(), "clone-1", "/Users/anka/.ssh/authorized_keys", "host.txt"); err != nil {
+		t.Fatalf("CopyFromGuest() error: %v", err)
 	}
 }
 

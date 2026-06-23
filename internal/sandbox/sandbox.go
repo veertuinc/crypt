@@ -17,7 +17,6 @@ import (
 
 	"github.com/veertuinc/crypt/internal/agent"
 	"github.com/veertuinc/crypt/internal/anka"
-	"github.com/veertuinc/crypt/internal/tty"
 )
 
 // minMajor / minMinor is the lowest Anka version that supports host directory
@@ -230,29 +229,18 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 			fmt.Fprintf(os.Stderr, "crypt: launching %s (may take a while for VM to boot)\n", ag.Name)
 		}
 	}
+	conn, err := prepareSSH(ctx, client, clone, suppressLifecycleLogs)
+	if err != nil {
+		return err
+	}
+
 	if ag.Name == "claude" {
-		if err := ensureClaudeWorkspaceTrust(ctx, client, clone, sshUser(), guestDir); err != nil {
+		if err := ensureClaudeWorkspaceTrust(ctx, conn, conn.user, guestDir); err != nil {
 			return fmt.Errorf("preparing claude workspace trust: %w", err)
 		}
 	}
-	var runErr error
-	if len(userArgs) == 0 {
-		// Interactive sessions run over SSH, which allocates a real PTY in the
-		// guest (ssh -t). anka run forwards stdin but cannot allocate a TTY, so
-		// agents like Claude Code would otherwise drop into print mode.
-		runErr = runInteractiveSSH(ctx, client, clone, guestDir, ag, suppressLifecycleLogs)
-	} else {
-		// A task prompt runs unattended through anka run; wire stdio directly so
-		// guest stdout/stderr (including errors on failure) reach the terminal.
-		cmd := client.RunCommand(ctx, clone, guestDir, loginShell(ag.Command(userArgs)))
-		var output string
-		output, runErr = tty.RunAttached(cmd)
-		if runErr != nil && !suppressLifecycleLogs {
-			if strings.TrimSpace(output) == "" {
-				fmt.Fprintf(os.Stderr, "crypt: no output from %s (check PATH in ~/.zprofile inside the VM)\n", ag.Name)
-			}
-		}
-	}
+
+	runErr := runAgentSSH(ctx, conn, guestDir, ag, userArgs)
 	if runErr != nil && !suppressLifecycleLogs {
 		// A non-zero agent exit is surfaced but is not a Crypt failure.
 		fmt.Fprintf(os.Stderr, "crypt: %s exited: %v\n", ag.Name, runErr)
@@ -444,18 +432,6 @@ func sanitize(name string) string {
 // guestEnvPrefix exports environment variables that tell agents they are
 // running inside Crypt's isolated VM, so safety prompts can be skipped.
 const guestEnvPrefix = "export IS_SANDBOX=1; "
-
-// loginShell wraps the agent invocation in an interactive login shell so the
-// user's PATH (npm global bin, etc.) is available. `exec` replaces the shell
-// with the agent so the terminal is handed over directly. Every token is
-// single-quoted so arbitrary user arguments cannot break out of the command.
-func loginShell(argv []string) []string {
-	quoted := make([]string, len(argv))
-	for i, token := range argv {
-		quoted[i] = shellQuote(token)
-	}
-	return []string{"zsh", "-lc", guestEnvPrefix + "exec " + strings.Join(quoted, " ")}
-}
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

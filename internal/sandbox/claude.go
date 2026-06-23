@@ -1,12 +1,10 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/veertuinc/crypt/internal/anka"
 )
@@ -15,7 +13,7 @@ import (
 // ~/.claude.json so Claude Code skips the workspace trust dialog. Claude walks
 // parent paths when checking trust, so trusting the home directory and Anka's
 // shared-files root covers mounted project paths too.
-func ensureClaudeWorkspaceTrust(ctx context.Context, client *anka.Client, vm, user, guestDir string) error {
+func ensureClaudeWorkspaceTrust(ctx context.Context, conn sshConn, user, guestDir string) error {
 	paths := claudeTrustPaths(user, guestDir)
 	pathsJSON, err := json.Marshal(paths)
 	if err != nil {
@@ -41,16 +39,7 @@ with open(config_path, "w") as f:
     f.write("\n")
 PY`, pathsJSON)
 
-	cmd := client.RunCommand(ctx, vm, "", []string{"zsh", "-lc", script})
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		if detail := strings.TrimSpace(errBuf.String()); detail != "" {
-			return fmt.Errorf("%w (%s)", err, detail)
-		}
-		return err
-	}
-	return nil
+	return runSSHScript(ctx, conn, script)
 }
 
 func claudeTrustPaths(user, guestDir string) []string {

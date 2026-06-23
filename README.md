@@ -199,7 +199,7 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
 6. Launch the agent with its unattended-mode flags injected. For Claude Code,
    Crypt also pre-trusts the guest workspace in `~/.claude.json` so the
    "Do you trust this folder?" dialog is skipped. A task prompt
-   (`crypt claude "fix the UI"`) runs unattended via `anka run`; an interactive
+   (`crypt claude "fix the UI"`) runs unattended over SSH; an interactive
    session (`crypt claude`) connects over `ssh -t` so the agent gets a real
    terminal for its full TUI.
 7. On exit (including Ctrl-C), the clone stays running and is kept on disk unless

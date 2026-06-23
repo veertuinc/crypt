@@ -65,13 +65,12 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	return waitErr
 }
 
-// RunAttached runs cmd with stdin, stdout, and stderr connected to the calling
-// process. Use for non-interactive task prompts where a PTY is unnecessary and
-// direct stream forwarding preserves guest output (including stderr on failure).
+// RunAttached runs cmd with stdout and stderr connected to the calling process.
+// Stdin is not forwarded: task-mode agents (e.g. grok -p) treat an open TTY as
+// interactive and block after printing the response until stdin closes.
 // It returns combined guest stdout/stderr captured while forwarding.
 func RunAttached(cmd *exec.Cmd) (string, error) {
 	var buf bytes.Buffer
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
 	err := cmd.Run()

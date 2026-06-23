@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -134,17 +133,14 @@ func (c *Client) Delete(ctx context.Context, vm string) error {
 	return c.run(ctx, "delete", "--yes", vm)
 }
 
-// RunCommand builds (but does not start) the exec.Cmd that runs argv inside vm
-// with the given working directory. The caller wires up stdio (typically via a
-// PTY) and starts the command.
-func (c *Client) RunCommand(ctx context.Context, vm, workdir string, argv []string) *exec.Cmd {
-	args := []string{"run"}
-	if workdir != "" {
-		args = append(args, "--workdir", workdir)
-	}
-	args = append(args, vm)
-	args = append(args, argv...)
-	return exec.CommandContext(ctx, c.binary, args...)
+// CopyToGuest copies a host file into a running VM.
+func (c *Client) CopyToGuest(ctx context.Context, hostPath, vm, guestPath string) error {
+	return c.run(ctx, "cp", hostPath, vm+":"+guestPath)
+}
+
+// CopyFromGuest copies a file from a running VM onto the host.
+func (c *Client) CopyFromGuest(ctx context.Context, vm, guestPath, hostPath string) error {
+	return c.run(ctx, "cp", vm+":"+guestPath, hostPath)
 }
 
 // IP returns the guest's IP address for SSH access. Anka reports the clone's
