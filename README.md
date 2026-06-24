@@ -36,7 +36,7 @@ an ephemeral VM.
   when using `--mount` (host directory mounting was added in
   [Anka 3.9.0](https://docs.veertu.com/anka/whats-new/anka-3.9.0/#ability-to-mount-host-directories-inside-of-the-vm)).
 - **Apple Silicon** is required for `--mount`. Directory mounts are not supported on Intel.
-- **Anka Enterprise** is required for `--no-local` network isolation.
+<!-- - **Anka Enterprise** is required for `--no-local` network isolation. -->
 - A base Anka VM that you have prepared with the agent installed and authenticated.
 
 ## Install
@@ -102,7 +102,7 @@ Crypt clones it for each run.
 > Interactive sessions (`crypt grok` with no prompt) connect over SSH so the
 > agent gets a real terminal. Crypt generates a dedicated SSH key per clone on
 > first use (`~/.config/crypt/keys/<vm>/id_ed25519`) and authorizes it in that
-> clone automatically via `anka run`; you only need Remote Login enabled in the
+> clone automatically via `anka run` before SSH is attempted; you only need Remote Login enabled in the
 > base VM. Crypt logs in as the `anka` user by default — override with
 > `CRYPT_SSH_USER`. Keys are removed when the clone is destroyed.
 >
@@ -111,7 +111,7 @@ Crypt clones it for each run.
 > If an installer only updates `~/.zshrc` (Grok does this), add its bin directory
 > to `~/.zprofile` as shown above.
 
-3. On first setup, harden network access on the base VM (recommended; requires
+<!-- 3. On first setup, harden network access on the base VM (recommended; requires
    Anka Enterprise). Clones inherit this setting:
 
 > [!IMPORTANT]
@@ -120,6 +120,7 @@ Crypt clones it for each run.
    ```sh
    anka modify crypt-base network --no-local
    ```
+-->
 
 Every clone Crypt makes inherits this prepared state, so you only authenticate once.
 
@@ -138,8 +139,8 @@ crypt: starting crypt-clone-1
 crypt: SSH: ssh -i '/Users/you/Library/Application Support/crypt/keys/crypt-clone-1/id_ed25519' -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 anka@192.168.64.8
 crypt: VNC: open vnc://anka@192.168.64.8
 crypt: mounting /Users/you/project
-crypt: waiting for SSH on anka@192.168.64.8
 crypt: authorizing SSH key in crypt-clone-1 via anka run
+crypt: waiting for SSH on anka@192.168.64.8
 crypt: launching grok
 I'm Grok Build, xAI's terminal-native coding agent. I can read and edit files, run
 shell commands, search your codebase, and help with software engineering tasks.
@@ -184,7 +185,7 @@ Flags:
 | `--memory`   | `0`          | Override RAM in MB (`0` = use the VM setting)       |
 | `--mount`    | `false`      | Mount the current directory into the VM (exposes that path on the host) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
-| `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   |
+<!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 
 Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
 
@@ -192,21 +193,22 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
 
 1. Verify Anka is installed and the base VM exists (Anka 3.9+ when using `--mount`).
 2. `anka clone <base> crypt-clone-N` — an instant shadow clone (lowest free number; printed on stderr).
-3. With `--no-local`, `anka modify <clone> network --no-local` — block VM-to-VM
+<!-- 3. With `--no-local`, `anka modify <clone> network --no-local` — block VM-to-VM
    and VM-to-host network traffic (requires Anka Enterprise; usually set once on
-   the base VM instead).
-4. `anka start` the clone (applying any `--cpu` / `--memory` overrides first).
-5. With `--mount`, `anka mount <clone> <cwd>` — your directory appears at
+   the base VM instead). -->
+3. `anka start` the clone (applying any `--cpu` / `--memory` overrides first).
+4. With `--mount`, `anka mount <clone> <cwd>` — your directory appears at
    `/Volumes/My Shared Files/project1` in the guest. The agent can read and write
    that path; changes are visible on the host. Only mount a directory you trust
    the agent with.
-6. Launch the agent with its unattended-mode flags injected. For Claude Code,
+5. Authorize Crypt's SSH key in the clone via `anka run`, then connect over SSH.
+   Launch the agent with its unattended-mode flags injected. For Claude Code,
    Crypt also pre-trusts the guest workspace in `~/.claude.json` so the
    "Do you trust this folder?" dialog is skipped. A task prompt
    (`crypt claude "fix the UI"`) runs unattended over SSH; an interactive
    session (`crypt claude`) connects over `ssh -t` so the agent gets a real
    terminal for its full TUI.
-7. On exit (including Ctrl-C), the clone stays running and is kept on disk unless
+6. On exit (including Ctrl-C), the clone stays running and is kept on disk unless
    you passed `--destroy`, which deletes it. Remove kept clones with
    `crypt destroy` (or `crypt --name <vm> destroy`). If `--mount` is added to an
    already-running kept clone, Crypt unmounts that temporary host path after the
@@ -215,26 +217,20 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
 ## Network isolation
 
 > [!IMPORTANT]
-> These features require an Enterprise or Enterprise Plus license.
+> IP filtering requires an Enterprise or Enterprise Plus license.
 
-[`--no-local`](https://docs.veertu.com/anka/anka-virtualization-cli/advanced-security-features/#block-vm-to-vm-and-vm-to-host-communication)
-blocks VM-to-VM and VM-to-host **network** communication. Enable it once when you
-prepare your base VM (recommended — clones inherit the setting):
-
-```sh
-anka modify crypt-base network --no-local
-```
-
-Or pass `--no-local` on a Crypt run to apply it to that clone only.
-
-For tighter control, bake [IP filtering rules](https://docs.veertu.com/anka/anka-virtualization-cli/advanced-security-features/#ip-filtering-rules)
-into your base VM before Crypt clones it. Rules are evaluated in order; the first
-match wins. Example — block local traffic and deny everything else:
+Bake [IP filtering rules](https://docs.veertu.com/anka/anka-virtualization-cli/advanced-security-features/#ip-filtering-rules)
+into your base VM before Crypt clones it. Crypt warns at run time when filter
+rules are enabled. **Always allow inbound TCP port 22 from the host** (and
+outbound return traffic) before any deny rules, or Crypt cannot connect over SSH.
+Rules are evaluated in order; the first match wins. Example — allow host SSH,
+then block other inbound traffic:
 
 ```sh
 cat <<'EOF' | anka modify crypt-base network -f-
-block local
-block any
+pass in from any port 22
+pass out to any
+block in from any port 80
 EOF
 ```
 
@@ -243,6 +239,18 @@ per-VM rules so clones inherit them. See Anka's
 [Advanced Security Features](https://docs.veertu.com/anka/anka-virtualization-cli/advanced-security-features/)
 for the full rule syntax and additional options (including TUN/WireGuard on the
 host for routing all VM traffic through a VPN).
+
+<!--
+[`--no-local`](https://docs.veertu.com/anka/anka-virtualization-cli/advanced-security-features/#block-vm-to-vm-and-vm-to-host-communication)
+blocks VM-to-VM and VM-to-host network communication. Enable it once when you
+prepare your base VM (recommended — clones inherit the setting):
+
+```sh
+anka modify crypt-base network --no-local
+```
+
+Or pass `--no-local` on a Crypt run to apply it to that clone only.
+-->
 
 ## A note on file syncing
 

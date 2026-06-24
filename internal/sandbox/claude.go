@@ -14,13 +14,21 @@ import (
 // parent paths when checking trust, so trusting the home directory and Anka's
 // shared-files root covers mounted project paths too.
 func ensureClaudeWorkspaceTrust(ctx context.Context, conn sshConn, user, guestDir string) error {
-	paths := claudeTrustPaths(user, guestDir)
-	pathsJSON, err := json.Marshal(paths)
+	script, err := claudeTrustScript(user, guestDir)
 	if err != nil {
 		return err
 	}
+	return runSSHScript(ctx, conn, script)
+}
 
-	script := fmt.Sprintf(`python3 - <<'PY'
+func claudeTrustScript(user, guestDir string) (string, error) {
+	paths := claudeTrustPaths(user, guestDir)
+	pathsJSON, err := json.Marshal(paths)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(`python3 - <<'PY'
 import json, os
 paths = %s
 config_path = os.path.expanduser("~/.claude.json")
@@ -37,9 +45,7 @@ os.makedirs(os.path.dirname(config_path), exist_ok=True)
 with open(config_path, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
-PY`, pathsJSON)
-
-	return runSSHScript(ctx, conn, script)
+PY`, pathsJSON), nil
 }
 
 func claudeTrustPaths(user, guestDir string) []string {

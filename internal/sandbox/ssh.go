@@ -61,17 +61,13 @@ func prepareSSH(ctx context.Context, client *anka.Client, vm string, suppressLif
 
 	conn := sshConn{keyPath: keyPath, user: user, ip: ip}
 
+	logSSHProgress(suppressLifecycleLogs, "authorizing SSH key in %s via anka run", vm)
+	if err := bootstrapAuthorizedKey(ctx, client, vm, user, pubKey); err != nil {
+		return sshConn{}, fmt.Errorf("authorizing SSH key in %s via anka run: %w", vm, err)
+	}
+
 	if err := waitForSSH(ctx, keyPath, user, ip, suppressLifecycleLogs, fmt.Sprintf("waiting for SSH on %s", userAtHost(user, ip))); err != nil {
-		if !errors.Is(err, errSSHAuthFailed) {
-			return sshConn{}, err
-		}
-		logSSHProgress(suppressLifecycleLogs, "authorizing SSH key in %s via anka run", vm)
-		if bootstrapErr := bootstrapAuthorizedKey(ctx, client, vm, user, pubKey); bootstrapErr != nil {
-			return sshConn{}, fmt.Errorf("authorizing SSH key in %s via anka run: %w", vm, bootstrapErr)
-		}
-		if err := waitForSSH(ctx, keyPath, user, ip, suppressLifecycleLogs, fmt.Sprintf("waiting for SSH on %s after authorizing key", userAtHost(user, ip))); err != nil {
-			return sshConn{}, fmt.Errorf("waiting for SSH after authorizing key: %w", err)
-		}
+		return sshConn{}, err
 	}
 
 	if err := ensureAuthorizedKey(ctx, conn, pubKey); err != nil {

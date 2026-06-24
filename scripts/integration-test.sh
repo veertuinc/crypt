@@ -18,7 +18,8 @@
 #   CRYPT_AGENTS         comma-separated agents to test (default: grok)
 #   CRYPT_SKIP_AGENTS    set to 1 to skip all agent tests
 #   CRYPT_SKIP_INTERACTIVE  set to 1 to skip SSH/interactive agent tests
-#   --no-local tests run by default (requires Anka Enterprise)
+#   --no-local tests disabled (--no-local blocks host-to-VM SSH on current Anka builds)
+#   IP filter tests require Anka Enterprise (anka modify network -f-)
 #   CRYPT_AGENT_TIMEOUT     seconds per agent task (default: 300)
 #   CRYPT_INTERACTIVE_TIMEOUT  seconds for interactive sessions (default: 300)
 #   CRYPT_SESSION_DIR      session store for this run (default: $WORK_ROOT/sessions)
@@ -44,6 +45,8 @@ CURRENT_TEST_DIR=""
 CREATED_VM_NAMES=()
 CRYPT_LAST_OUTPUT=""
 CRYPT_LAST_EXIT=0
+BASE_VM_FILTER_SAVED=""
+BASE_VM_FILTER_HAD_RULES=false
 
 log() { printf '%s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }
@@ -152,6 +155,32 @@ ensure_base_vm_stopped() {
 		log "stopping $CRYPT_BASE_VM (Anka cannot clone a running base VM)"
 		anka stop --force "$CRYPT_BASE_VM" >/dev/null
 	fi
+}
+
+save_base_vm_network_filter() {
+	BASE_VM_FILTER_SAVED=""
+	BASE_VM_FILTER_HAD_RULES=false
+	if anka show "$CRYPT_BASE_VM" network -f >/dev/null 2>&1; then
+		BASE_VM_FILTER_SAVED="$(anka show "$CRYPT_BASE_VM" network -f 2>/dev/null)"
+		BASE_VM_FILTER_HAD_RULES=true
+	fi
+}
+
+restore_base_vm_network_filter() {
+	if [[ "${BASE_VM_FILTER_HAD_RULES:-}" == true && -n "${BASE_VM_FILTER_SAVED:-}" ]]; then
+		printf '%s\n' "$BASE_VM_FILTER_SAVED" | anka modify "$CRYPT_BASE_VM" network -f- >/dev/null 2>&1 || true
+	else
+		anka modify "$CRYPT_BASE_VM" network --filter off >/dev/null 2>&1 || true
+	fi
+}
+
+ip_filter_supported() {
+	ensure_base_vm_stopped
+	if ! printf 'pass in from any port 22\n' | anka modify "$CRYPT_BASE_VM" network -f- >/dev/null 2>&1; then
+		return 1
+	fi
+	anka modify "$CRYPT_BASE_VM" network --filter off >/dev/null 2>&1 || true
+	return 0
 }
 
 assert_vm_exists() {
@@ -531,9 +560,26 @@ test_run_cpu_memory() {
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_RESOURCES_OK"
 }
 
-test_no_local() {
-	run_crypt run --no-local --destroy -- /bin/echo CRYPT_NOLOCAL_OK
-	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_NOLOCAL_OK" && output_contains "no-local"
+# Disabled: --no-local blocks host-to-VM SSH on current Anka builds.
+# test_no_local() {
+# 	run_crypt run --no-local --destroy -- /bin/echo CRYPT_NOLOCAL_OK
+# 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_NOLOCAL_OK" && output_contains "no-local"
+# }
+
+test_ip_filter_ssh_allowed() {
+	save_base_vm_network_filter
+	trap restore_base_vm_network_filter RETURN
+
+	cat <<'EOF' | anka modify "$CRYPT_BASE_VM" network -f-
+pass in from any port 22
+pass out to any
+block in from any port 80
+EOF
+
+	run_crypt run --destroy -- /bin/echo CRYPT_IPFILTER_OK
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "CRYPT_IPFILTER_OK" &&
+		output_contains "IP filtering rules are enabled"
 }
 
 test_task_failure_shows_stderr() {
@@ -644,8 +690,15 @@ main() {
 	new_test_dir "run-resources"
 	run_test "run --cpu --memory" test_run_cpu_memory
 
-	new_test_dir "run-nolocal"
-	run_test "run --no-local" test_no_local
+	# new_test_dir "run-nolocal"
+	# run_test "run --no-local" test_no_local
+
+	if ip_filter_supported; then
+		new_test_dir "run-ipfilter"
+		run_test "run with IP filter rules (SSH allowed)" test_ip_filter_ssh_allowed
+	else
+		skip_test "run with IP filter rules" "Anka Enterprise required or anka modify network -f- unavailable"
+	fi
 
 	new_test_dir "run-failure-stderr"
 	run_test "task failure shows guest stderr" test_task_failure_shows_stderr

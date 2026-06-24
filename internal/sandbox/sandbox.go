@@ -149,7 +149,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	defer teardown()
 
 	if freshClone && opts.NoLocal {
-		fmt.Fprintf(os.Stderr, "crypt: blocking VM-to-host network access (--no-local)\n")
+		fmt.Fprintf(os.Stderr, "crypt: blocking VM-to-host and VM-to-VM network access (--no-local)\n")
 		if err := client.SetNetworkNoLocal(ctx, clone); err != nil {
 			return fmt.Errorf("blocking VM-to-host network access: %w", err)
 		}
@@ -227,6 +227,8 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 		guestDir = path.Join(anka.SharedFilesRoot, dirName)
 	}
+
+	warnIfIPFilterBlocksSSH(ctx, client, clone, suppressLifecycleLogs)
 
 	conn, err := prepareSSH(ctx, client, clone, suppressLifecycleLogs)
 	if err != nil {

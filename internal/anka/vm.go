@@ -138,9 +138,7 @@ func (c *Client) Run(ctx context.Context, vm string, args ...string) error {
 	return c.run(ctx, append([]string{"run", vm}, args...)...)
 }
 
-// IP returns the guest's IP address for SSH access. Anka reports the clone's
-// address on the shared network as part of its VNC connection string; we reuse
-// that rather than requiring port forwarding.
+// IP returns the guest's IP address for SSH access.
 func (c *Client) IP(ctx context.Context, vm string) (string, error) {
 	info, err := c.Show(ctx, vm)
 	if err != nil {
