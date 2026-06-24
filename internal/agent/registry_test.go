@@ -101,6 +101,7 @@ func TestGrokInjectFlags(t *testing.T) {
 	want := []string{
 		"grok",
 		"--always-approve",
+		"--no-auto-update",
 		"--output-format", "plain",
 		"-p",
 		"fix the test",
@@ -110,9 +111,15 @@ func TestGrokInjectFlags(t *testing.T) {
 	}
 
 	got = a.Command(nil)
-	want = []string{"grok", "--always-approve"}
+	want = []string{"grok", "--always-approve", "--no-auto-update"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Command(nil) = %v, want %v", got, want)
+	}
+
+	got = a.Command([]string{"--reasoning-effort", "high"})
+	want = []string{"grok", "--always-approve", "--no-auto-update", "--reasoning-effort", "high"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(flag-only) = %v, want %v", got, want)
 	}
 }
 
@@ -122,7 +129,7 @@ func TestAgentAliasInjectFlags(t *testing.T) {
 		t.Fatalf("Get(agent): %v", err)
 	}
 	got := a.Command(nil)
-	want := []string{"agent", "--always-approve"}
+	want := []string{"agent", "--always-approve", "--no-auto-update"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Command(nil) = %v, want %v", got, want)
 	}

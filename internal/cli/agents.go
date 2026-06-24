@@ -22,8 +22,8 @@ func newAgentCmds(cfg *config) []*cobra.Command {
 		cmd := &cobra.Command{
 			Use:   fmt.Sprintf("%s [flags] [-- %s-args...]", ag.Name, ag.Name),
 			Short: ag.Summary,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return runSandbox(cmd.Context(), ag, args, cfg.runOptions())
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return runSandbox(cmd.Context(), ag, passthroughAgentArgs(ag.Name), cfg.runOptions())
 			},
 		}
 		cfg.bindRunFlags(cmd)

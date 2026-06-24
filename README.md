@@ -14,6 +14,7 @@ host, so mount only directories you are willing to expose.
    host                           Anka VM (kept after run)
   ┌───────────────┐   clone      ┌───────────────────────────────┐
   │ crypt grok    │ ──────────▶  │ grok --always-approve         │
+  │               │              │     --no-auto-update          │
   │ --mount       │ ◀── mount ─▶ │ /Volumes/My Shared Files/$CWD │
   └───────────────┘              └───────────────────────────────┘
 ```
@@ -82,18 +83,18 @@ Crypt clones it for each run.
    anka run crypt-base zsh -lc 'npm install -g @anthropic-ai/claude-code'
    # Optional: set the model to use (default is latest model from anthropic)
    anka run crypt-base bash -c "echo 'export ANTHROPIC_MODEL=\"claude-sonnet-4-5-20250929\"' >> ~/.zprofile"
-   anka run crypt-base zsh -lc 'claude'    # follow the login prompts
+   anka run crypt-base zsh -lc 'claude'    # follow the login prompts (API keys preferred)
    # Install Codex (codex)
    anka run crypt-base zsh -lc 'npm install -g @openai/codex'
-   anka run crypt-base zsh -lc 'codex'     # follow the login prompts
+   anka run crypt-base zsh -lc 'codex'     # follow the login prompts (API keys preferred)
    # Install Sakana Fugu (codex-fugu)
    anka run crypt-base zsh -lc 'curl -fsSL https://sakana.ai/fugu/install | bash'
-   anka run crypt-base zsh -lc 'codex-fugu'     # follow the login prompts
+   anka run crypt-base zsh -lc 'codex-fugu'     # follow the login prompts (API keys preferred)
    # Install Grok Build (grok / agent)
    anka run crypt-base zsh -lc 'curl -fsSL https://x.ai/cli/install.sh | bash'
    # Grok adds PATH to ~/.zshrc; Crypt uses login shells (~/.zprofile) for task runs
    anka run crypt-base bash -c "echo 'export PATH=\"\$HOME/.grok/bin:\$PATH\"' >> ~/.zprofile"
-   anka run crypt-base zsh -lc 'grok login'     # follow the login prompts
+   anka run crypt-base bash -c "echo 'XAI_API_KEY=xai-Ah5cwp3..' >> ~/.zprofile" # use API keys when possible to avoid the CLI asking for MFA and hanging your agents
    # stop the base VM
    anka stop crypt-base
    ```

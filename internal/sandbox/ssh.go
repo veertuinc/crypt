@@ -88,14 +88,15 @@ func logSSHProgress(suppress bool, format string, args ...any) {
 // allocate a TTY; task prompts run headlessly without forwarding host stdin.
 func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, ag agent.Agent, userArgs []string) error {
 	argv := ag.Command(userArgs)
-	return runSSH(ctx, conn, remoteCommand(guestDir, argv), len(userArgs) == 0)
+	return runSSH(ctx, conn, remoteCommand(guestDir, argv), !agent.HasTaskPrompt(userArgs))
 }
 
 func runSSH(ctx context.Context, conn sshConn, remoteCommand string, interactive bool) error {
-	args := append(sshOptions(conn.keyPath), userAtHost(conn.user, conn.ip), remoteCommand)
+	args := sshOptions(conn.keyPath)
 	if interactive {
-		args = insertSSHFlag(args, "-t")
+		args = append(args, "-t")
 	}
+	args = append(args, userAtHost(conn.user, conn.ip), remoteCommand)
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdout = os.Stdout
@@ -123,13 +124,6 @@ func runSSHScript(ctx context.Context, conn sshConn, script string) error {
 
 func userAtHost(user, ip string) string {
 	return user + "@" + ip
-}
-
-func insertSSHFlag(args []string, flag string) []string {
-	out := make([]string, 0, len(args)+1)
-	out = append(out, args[0])
-	out = append(out, flag)
-	return append(out, args[1:]...)
 }
 
 // ensureSSHKey returns the SSH key pair dedicated to vm, generating it on first use.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/veertuinc/crypt/internal/agent"
@@ -18,6 +19,7 @@ func TestInteractiveAgentDoesNotDestroyCloneByDefault(t *testing.T) {
 	t.Cleanup(func() { runSandbox = originalRunSandbox })
 
 	cmd := newRootCmd()
+	os.Args = []string{"crypt", "claude"}
 	cmd.SetArgs([]string{"claude"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("ExecuteContext() error: %v", err)
