@@ -11,7 +11,7 @@ type config struct {
 	baseVM  string
 	cpu     uint32
 	memory  uint32
-	mount   bool
+	mountPaths []string
 	noLocal bool
 	destroy bool
 }
@@ -22,7 +22,7 @@ func (c config) runOptions() sandbox.Options {
 		Name:    c.name,
 		CPU:     c.cpu,
 		Memory:  c.memory,
-		Mount:   c.mount,
+		MountPaths: c.mountPaths,
 		NoLocal: c.noLocal,
 		Destroy: c.destroy,
 	}
@@ -36,7 +36,7 @@ func (c *config) bindPersistentFlags(cmd *cobra.Command) {
 func (c *config) bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().Uint32Var(&c.cpu, "cpu", 0, "override vCPU core count (0 = use the VM's setting)")
 	cmd.Flags().Uint32Var(&c.memory, "memory", 0, "override RAM in megabytes (0 = use the VM's setting)")
-	cmd.Flags().BoolVar(&c.mount, "mount", false, "mount the current directory into the VM (exposes that path on the host; use with care)")
+	cmd.Flags().StringArrayVar(&c.mountPaths, "mount", nil, "host directory to share with the VM (repeatable; pass . for the current directory)")
 	cmd.Flags().BoolVar(&c.noLocal, "no-local", false, "block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)")
 	cmd.Flags().BoolVar(&c.destroy, "destroy", false, "delete the clone when the run ends (default: keep until crypt destroy)")
 

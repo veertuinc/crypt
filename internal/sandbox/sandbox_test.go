@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -157,8 +158,31 @@ func TestShouldNotSuppressLifecycleLogsForFreshStoppedOrDestroyRuns(t *testing.T
 	}
 }
 
+func TestResolveMountPaths(t *testing.T) {
+	wd := t.TempDir()
+	t.Chdir(wd)
+
+	got, err := resolveMountPaths([]string{".", wd})
+	if err != nil {
+		t.Fatalf("resolveMountPaths() error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("resolveMountPaths() len = %d, want 2", len(got))
+	}
+	if got[0] != got[1] {
+		t.Fatalf("resolveMountPaths()[0] = %q, [1] = %q, want same absolute path", got[0], got[1])
+	}
+	if !filepath.IsAbs(got[0]) {
+		t.Fatalf("resolveMountPaths()[0] = %q, want absolute path", got[0])
+	}
+
+	if _, err := resolveMountPaths([]string{"--reasoning-effort"}); err == nil {
+		t.Fatal("resolveMountPaths(flag-like path) error = nil, want error")
+	}
+}
+
 func TestShouldUnmountAfterRunForMountAddedToRunningKeptVM(t *testing.T) {
-	if !shouldUnmountAfterRun(Options{Mount: true}, true) {
+	if !shouldUnmountAfterRun(Options{MountPaths: []string{"."}}, true) {
 		t.Fatal("shouldUnmountAfterRun() = false, want true")
 	}
 }
@@ -170,8 +194,8 @@ func TestShouldNotUnmountAfterRunForFreshDestroyOrUnmountedRuns(t *testing.T) {
 		wasRunningAtMount bool
 	}{
 		{name: "no mount", opts: Options{}, wasRunningAtMount: true},
-		{name: "fresh VM mount", opts: Options{Mount: true}, wasRunningAtMount: false},
-		{name: "destroy", opts: Options{Mount: true, Destroy: true}, wasRunningAtMount: true},
+		{name: "fresh VM mount", opts: Options{MountPaths: []string{"."}}, wasRunningAtMount: false},
+		{name: "destroy", opts: Options{MountPaths: []string{"."}, Destroy: true}, wasRunningAtMount: true},
 	}
 	for _, tc := range cases {
 		if shouldUnmountAfterRun(tc.opts, tc.wasRunningAtMount) {

@@ -496,7 +496,7 @@ test_run_lifecycle() {
 	run_crypt run -- /bin/echo CRYPT_RUN_OK
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_RUN_OK" || return 1
 
-	run_crypt run --mount -- /bin/cat "$guest_path"
+	run_crypt run --mount . -- /bin/cat "$guest_path"
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "mount-ok" || return 1
 	wait_for_mount_gone "$vm_name" "$CURRENT_TEST_DIR" || return 1
 
@@ -559,7 +559,7 @@ test_agent_lifecycle() {
 		assert_vm_exists "$vm_name" || return 1
 
 	echo CRYPT_OK >"$CURRENT_TEST_DIR/marker.txt"
-	run_crypt "$agent" --mount "Read marker.txt in the current directory and reply with its exact contents only."
+	run_crypt "$agent" --mount . "Read marker.txt in the current directory and reply with its exact contents only."
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_OK" || return 1
 
 	if [[ "$agent" == "grok" && "${CRYPT_SKIP_INTERACTIVE:-}" != "1" ]]; then

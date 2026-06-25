@@ -23,13 +23,13 @@ var cryptRootFlags = flagSet{
 
 var cryptRunFlags = flagSet{
 	bools: map[string]bool{
-		"mount":    true,
 		"no-local": true,
 		"destroy":  true,
 	},
 	values: map[string]bool{
 		"cpu":    true,
 		"memory": true,
+		"mount":  true,
 	},
 }
 

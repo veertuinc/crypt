@@ -26,11 +26,11 @@ and remain running between sessions so agent state survives. Pass --destroy to
 delete after a run, or run crypt --name NAME destroy later.
 
 Usage:
-  crypt claude --mount "fix the UI"              # VM name: project1 (from directory)
-  crypt --name backend claude --mount "add an endpoint"
-  crypt --name frontend codex --mount -- "refactor the parser"
-  crypt codex-fugu --mount "investigate the flaky test"
-  crypt grok --mount "fix the failing test"
+  crypt claude --mount . "fix the UI"              # VM name: project1 (from directory)
+  crypt --name backend claude --mount . "add an endpoint"
+  crypt --name frontend codex --mount . -- "refactor the parser"
+  crypt codex-fugu --mount . "investigate the flaky test"
+  crypt grok --mount . --mount ~/.atrium/bin "fix the failing test"
   crypt --name frontend run -- /bin/bash -l
   crypt destroy                                  # or crypt --name frontend destroy
 
@@ -43,9 +43,10 @@ One-time setup:
 Flags:
   --name NAME    Explicit clone VM name. When omitted, Crypt picks crypt-clone-N
                  and reuses that clone for the current directory across runs.
-  --mount        Share the current directory with the VM. Required when the agent
-                 needs to read or edit project files. Exposes that host path —
-                 omit it if you do not need filesystem access.
+  --mount PATH   Share a host directory with the VM (repeatable; pass . for the
+                 current directory). Required when the agent needs to read or
+                 edit project files. Exposes that host path — omit it if you do
+                 not need filesystem access.
   --destroy      Delete the clone when the run ends (default: keep until crypt destroy).
   --no-local     Block VM-to-host and VM-to-VM network on the clone (Anka Enterprise).
   --vm NAME      Base VM to clone (default: crypt-base).

@@ -12,22 +12,27 @@ func TestPassthroughAgentArgs(t *testing.T) {
 	}{
 		{
 			name: "agent flags only",
-			args: []string{"crypt", "grok", "--mount", "--reasoning-effort", "high"},
+			args: []string{"crypt", "grok", "--mount", ".", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},
 		},
 		{
 			name: "task prompt",
-			args: []string{"crypt", "grok", "--mount", "fix the test"},
+			args: []string{"crypt", "grok", "--mount", ".", "fix the test"},
 			want: []string{"fix the test"},
 		},
 		{
+			name: "multiple mounts",
+			args: []string{"crypt", "grok", "--mount", ".", "--mount", "/opt/atrium/bin", "--reasoning-effort", "high"},
+			want: []string{"--reasoning-effort", "high"},
+		},
+		{
 			name: "root flags before subcommand",
-			args: []string{"crypt", "--name", "backend", "grok", "--mount", "--reasoning-effort", "high"},
+			args: []string{"crypt", "--name", "backend", "grok", "--mount", ".", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},
 		},
 		{
 			name: "double dash separator",
-			args: []string{"crypt", "grok", "--mount", "--", "--reasoning-effort", "high"},
+			args: []string{"crypt", "grok", "--mount", ".", "--", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},
 		},
 	}

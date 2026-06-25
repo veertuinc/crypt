@@ -6,8 +6,9 @@ Crypt clones a prepared base VM into a shadow clone, launches the agent in
 unattended ("YOLO") mode, and **keeps the clone running between sessions** so
 agent state is preserved. Pass `--destroy` to delete after a run, or run
 `crypt destroy` later. By default the guest cannot reach your host filesystem.
-Pass `--mount` only when you need the agent to edit files in the current
-directory — that shared path is writable from the VM and changes apply on the
+Pass `--mount PATH` only when you need the agent to edit files on the host.
+Repeat `--mount` to share multiple directories. Pass `.` for the current
+directory — each shared path is writable from the VM and changes apply on the
 host, so mount only directories you are willing to expose.
 
 ```text
@@ -15,7 +16,7 @@ host, so mount only directories you are willing to expose.
   ┌───────────────┐   clone      ┌───────────────────────────────┐
   │ crypt grok    │ ──────────▶  │ grok --always-approve         │
   │               │              │     --no-auto-update          │
-  │ --mount       │ ◀── mount ─▶ │ /Volumes/My Shared Files/$CWD │
+  │ --mount .     │ ◀── mount ─▶ │ /Volumes/My Shared Files/$CWD │
   └───────────────┘              └───────────────────────────────┘
 ```
 
@@ -150,7 +151,7 @@ Is there something specific you'd like help with?
 crypt: kept VM crypt-clone-1 running (crypt destroy when done)
 
 
-❯ crypt grok --mount "do you see the mount in the VM under /Volumes/My Shared Files"
+❯ crypt grok --mount . "do you see the mount in the VM under /Volumes/My Shared Files"
 Yes, I can see the mount! It's visible at `/Volumes/My Shared Files` and is mounted using **AppleVirtIOFS** (Apple's virtualization filesystem for sharing between host and VM).
 
 **Mount details:**
@@ -166,11 +167,12 @@ The mount is working and accessible.
 #### Examples
 
 ```sh
-crypt claude --mount "keep going"                          # takes the current folder where we're executing the command and mounts that temporarily into the VM for the duration of the command
+crypt claude --mount . "keep going"                          # mount current directory into the VM for this run
+crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple host directories
 crypt claude                                               # interactive; VM kept until crypt destroy
-crypt codex-fugu --mount "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
-crypt grok --mount "fix the failing test"                  # Grok Build
-crypt --name backend claude --mount "add endpoint"         # separate named VM for another project
+crypt codex-fugu --mount . "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
+crypt grok --mount . "fix the failing test"                  # Grok Build
+crypt --name backend claude --mount . "add endpoint"         # separate named VM for another project
 crypt claude --destroy "one-shot"                          # delete when the run ends
 crypt destroy                                              # delete the kept VM for this directory
 crypt --name backend destroy                               # delete a named VM
@@ -184,7 +186,7 @@ Flags:
 | `--vm`       | `crypt-base` | Base Anka VM to clone for the sandbox              |
 | `--cpu`      | `0`          | Override vCPU core count (`0` = use the VM setting) |
 | `--memory`   | `0`          | Override RAM in MB (`0` = use the VM setting)       |
-| `--mount`    | `false`      | Mount the current directory into the VM (exposes that path on the host) |
+| `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
 <!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 
@@ -198,10 +200,10 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
    and VM-to-host network traffic (requires Anka Enterprise; usually set once on
    the base VM instead). -->
 3. `anka start` the clone (applying any `--cpu` / `--memory` overrides first).
-4. With `--mount`, `anka mount <clone> <cwd>` — your directory appears at
-   `/Volumes/My Shared Files/project1` in the guest. The agent can read and write
-   that path; changes are visible on the host. Only mount a directory you trust
-   the agent with.
+4. With `--mount PATH`, `anka mount <clone> <path>` — each directory appears under
+   `/Volumes/My Shared Files/<folder-name>` in the guest. The agent starts in the
+   first mounted directory. Changes are visible on the host. Only mount directories
+   you trust the agent with.
 5. Authorize Crypt's SSH key in the clone via `anka run`, then connect over SSH.
    Launch the agent with its unattended-mode flags injected. For Claude Code,
    Crypt also pre-trusts the guest workspace in `~/.claude.json` so the
@@ -211,8 +213,8 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
    terminal for its full TUI.
 6. On exit (including Ctrl-C), the clone stays running and is kept on disk unless
    you passed `--destroy`, which deletes it. Remove kept clones with
-   `crypt destroy` (or `crypt --name <vm> destroy`). If `--mount` is added to an
-   already-running kept clone, Crypt unmounts that temporary host path after the
+   `crypt destroy` (or `crypt --name <vm> destroy`). If `--mount` paths are added to an
+   already-running kept clone, Crypt unmounts those temporary host paths after the
    command finishes. Your base VM is never modified.
 
 ## Network isolation

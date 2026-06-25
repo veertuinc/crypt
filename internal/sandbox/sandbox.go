@@ -43,8 +43,8 @@ type Options struct {
 	CPU uint32
 	// Memory, when non-zero, overrides the clone's RAM size in megabytes.
 	Memory uint32
-	// Mount shares the host working directory into the guest via anka mount.
-	Mount bool
+	// MountPaths lists host directories to share into the guest via anka mount.
+	MountPaths []string
 	// NoLocal blocks VM-to-VM and VM-to-host network on the clone (anka network --no-local).
 	NoLocal bool
 	// Destroy deletes the clone when the run ends instead of keeping it on disk.
@@ -66,7 +66,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	if err != nil {
 		return err
 	}
-	if opts.Mount && !version.AtLeast(minMajor, minMinor) {
+	if len(opts.MountPaths) > 0 && !version.AtLeast(minMajor, minMinor) {
 		return fmt.Errorf("Anka %d.%d+ is required for host directory mounts (found %s)", minMajor, minMinor, version)
 	}
 
@@ -86,8 +86,6 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	if err != nil {
 		return fmt.Errorf("resolving working directory: %w", err)
 	}
-	dirName := filepath.Base(cwd)
-
 	clone, err := resolveCloneName(ctx, client, opts, cwd)
 	if err != nil {
 		return err
@@ -196,36 +194,45 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 	}
 
+	mountPaths, err := resolveMountPaths(opts.MountPaths)
+	if err != nil {
+		return err
+	}
+
 	var guestDir string
-	if opts.Mount {
-		alreadyMounted, err := client.HasMount(ctx, clone, cwd)
-		if err != nil {
-			return fmt.Errorf("checking mounts: %w", err)
-		}
-		mountedThisRun := false
-		if alreadyMounted {
+	if len(mountPaths) > 0 {
+		var mountedThisRun []string
+		for _, hostPath := range mountPaths {
+			alreadyMounted, err := client.HasMount(ctx, clone, hostPath)
+			if err != nil {
+				return fmt.Errorf("checking mounts: %w", err)
+			}
+			if alreadyMounted {
+				if !suppressLifecycleLogs {
+					fmt.Fprintf(os.Stderr, "crypt: %s is already mounted\n", hostPath)
+				}
+				continue
+			}
 			if !suppressLifecycleLogs {
-				fmt.Fprintf(os.Stderr, "crypt: %s is already mounted\n", cwd)
+				fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", hostPath)
 			}
-		} else {
-			if !suppressLifecycleLogs {
-				fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", cwd)
+			if err := client.Mount(ctx, clone, hostPath); err != nil {
+				return fmt.Errorf("mounting %s: %w", hostPath, err)
 			}
-			if err := client.Mount(ctx, clone, cwd); err != nil {
-				return fmt.Errorf("mounting working directory: %w", err)
-			}
-			mountedThisRun = true
+			mountedThisRun = append(mountedThisRun, hostPath)
 		}
-		if mountedThisRun && shouldUnmountAfterRun(opts, running) {
+		if len(mountedThisRun) > 0 && shouldUnmountAfterRun(opts, running) {
 			defer func() {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
 				defer cancel()
-				if err := client.Unmount(cleanupCtx, clone, dirName); err != nil && !suppressLifecycleLogs {
-					fmt.Fprintf(os.Stderr, "crypt: warning: failed to unmount %s from %s: %v\n", cwd, clone, err)
+				for _, hostPath := range mountedThisRun {
+					if err := client.Unmount(cleanupCtx, clone, filepath.Base(hostPath)); err != nil && !suppressLifecycleLogs {
+						fmt.Fprintf(os.Stderr, "crypt: warning: failed to unmount %s from %s: %v\n", hostPath, clone, err)
+					}
 				}
 			}()
 		}
-		guestDir = path.Join(anka.SharedFilesRoot, dirName)
+		guestDir = path.Join(anka.SharedFilesRoot, filepath.Base(mountPaths[0]))
 	}
 
 	warnIfIPFilterBlocksSSH(ctx, client, clone, suppressLifecycleLogs)
@@ -387,7 +394,29 @@ func shouldSuppressLifecycleLogs(opts Options, cloneExists, running bool) bool {
 }
 
 func shouldUnmountAfterRun(opts Options, wasRunningAtMount bool) bool {
-	return opts.Mount && wasRunningAtMount && !opts.Destroy
+	return len(opts.MountPaths) > 0 && wasRunningAtMount && !opts.Destroy
+}
+
+func resolveMountPaths(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	resolved := make([]string, 0, len(paths))
+	for _, rawPath := range paths {
+		rawPath = strings.TrimSpace(rawPath)
+		if rawPath == "" {
+			return nil, fmt.Errorf("--mount requires a host path (pass . for the current directory)")
+		}
+		if strings.HasPrefix(rawPath, "-") {
+			return nil, fmt.Errorf("--mount path %q looks like a flag; pass the directory explicitly (e.g. --mount .)", rawPath)
+		}
+		absPath, err := filepath.Abs(rawPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolving mount path %q: %w", rawPath, err)
+		}
+		resolved = append(resolved, absPath)
+	}
+	return resolved, nil
 }
 
 func waitForVMIP(ctx context.Context, lookup func(context.Context) (string, error), timeout, interval time.Duration) (string, error) {
