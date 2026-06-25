@@ -188,24 +188,24 @@ func TestResolveMountSpecs(t *testing.T) {
 		t.Fatalf("UserHomeDir() error: %v", err)
 	}
 	guestSkills := filepath.Join(home, ".grok", "skills")
-	spec, err := parseMountSpec("~/.grok/skills:" + guestSkills)
+	spec, err := parseMountSpec("~/.grok/skills:grok-skills")
 	if err != nil {
 		t.Fatalf("parseMountSpec() error: %v", err)
 	}
 	if spec.hostPath != guestSkills {
 		t.Fatalf("hostPath = %q, want %q", spec.hostPath, guestSkills)
 	}
-	if spec.guestFolderName != guestSkills {
-		t.Fatalf("guestFolderName = %q, want %q", spec.guestFolderName, guestSkills)
+	if spec.guestFolderName != "grok-skills" {
+		t.Fatalf("guestFolderName = %q, want grok-skills", spec.guestFolderName)
 	}
-	if spec.ankaArg() != guestSkills+":"+guestSkills {
-		t.Fatalf("ankaArg() = %q, want %q", spec.ankaArg(), guestSkills+":"+guestSkills)
+	if spec.ankaArg() != guestSkills+":grok-skills" {
+		t.Fatalf("ankaArg() = %q, want %q", spec.ankaArg(), guestSkills+":grok-skills")
 	}
-	if spec.guestWorkDir() != guestSkills {
-		t.Fatalf("guestWorkDir() = %q, want %q", spec.guestWorkDir(), guestSkills)
+	if spec.guestWorkDir() != path.Join(anka.SharedFilesRoot, "grok-skills") {
+		t.Fatalf("guestWorkDir() = %q, want %q", spec.guestWorkDir(), path.Join(anka.SharedFilesRoot, "grok-skills"))
 	}
-	if spec.unmountRef() != guestSkills {
-		t.Fatalf("unmountRef() = %q, want %q", spec.unmountRef(), guestSkills)
+	if spec.unmountRef() != "grok-skills" {
+		t.Fatalf("unmountRef() = %q, want grok-skills", spec.unmountRef())
 	}
 
 	if _, err := resolveMountSpecs([]string{"--reasoning-effort"}); err == nil {
@@ -213,6 +213,9 @@ func TestResolveMountSpecs(t *testing.T) {
 	}
 	if _, err := parseMountSpec("/tmp/project:"); err == nil {
 		t.Fatal("parseMountSpec(empty guest) error = nil, want error")
+	}
+	if _, err := parseMountSpec("/tmp/project:/Users/dev/skills"); err == nil {
+		t.Fatal("parseMountSpec(absolute guest path) error = nil, want error")
 	}
 }
 

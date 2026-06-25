@@ -448,9 +448,8 @@ func parseMountSpec(rawPath string) (mountSpec, error) {
 	}
 
 	if hasGuest {
-		guestFolderName, err = expandHome(guestFolderName)
-		if err != nil {
-			return mountSpec{}, fmt.Errorf("resolving mount guest folder %q: %w", guestFolderName, err)
+		if err := validateGuestFolderName(guestFolderName); err != nil {
+			return mountSpec{}, fmt.Errorf("--mount %q: %w", rawPath, err)
 		}
 	}
 
@@ -468,13 +467,11 @@ func (spec mountSpec) ankaArg() string {
 }
 
 func (spec mountSpec) guestWorkDir() string {
-	if spec.guestFolderName == "" {
-		return path.Join(anka.SharedFilesRoot, filepath.Base(spec.hostPath))
+	folderName := spec.guestFolderName
+	if folderName == "" {
+		folderName = filepath.Base(spec.hostPath)
 	}
-	if filepath.IsAbs(spec.guestFolderName) {
-		return spec.guestFolderName
-	}
-	return path.Join(anka.SharedFilesRoot, spec.guestFolderName)
+	return path.Join(anka.SharedFilesRoot, folderName)
 }
 
 func (spec mountSpec) unmountRef() string {
@@ -482,6 +479,19 @@ func (spec mountSpec) unmountRef() string {
 		return spec.guestFolderName
 	}
 	return filepath.Base(spec.hostPath)
+}
+
+func validateGuestFolderName(name string) error {
+	if name == "" {
+		return fmt.Errorf("guest folder name cannot be empty")
+	}
+	if filepath.IsAbs(name) || strings.Contains(name, string(filepath.Separator)) {
+		return fmt.Errorf("guest folder name %q must be a single folder name under %s, not a path", name, anka.SharedFilesRoot)
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("guest folder name %q is not allowed", name)
+	}
+	return nil
 }
 
 func expandHome(path string) (string, error) {

@@ -112,7 +112,7 @@ func (c *Client) HasMount(ctx context.Context, vm, hostPath string) (bool, error
 }
 
 // Mount shares a host directory into a running VM. The mountArg is passed to
-// `anka mount` verbatim, e.g. /host/path or /host/path:guest_folder_name.
+// `anka mount` verbatim, e.g. /host/path or /host/path:guest_folder_name under SharedFilesRoot.
 func (c *Client) Mount(ctx context.Context, vm, mountArg string) error {
 	return c.run(ctx, "mount", vm, mountArg)
 }

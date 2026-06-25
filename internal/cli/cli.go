@@ -44,11 +44,11 @@ Flags:
   --name NAME    Explicit clone VM name. When omitted, Crypt picks crypt-clone-N
                  and reuses that clone for the current directory across runs.
   --mount PATH   Share a host directory with the VM (repeatable; pass . for the
-                 current directory). Append :guest_folder_name to choose where
-                 the directory appears in the guest (for example
-                 ~/.grok/skills:~/.grok/skills). Required when the agent needs
-                 to read or edit project files. Exposes that host path — omit it
-                 if you do not need filesystem access.
+                 current directory). Append :folder_name to choose the folder
+                 name under /Volumes/My Shared Files (for example
+                 ~/.grok/skills:grok-skills). Required when the agent needs to
+                 read or edit project files. Exposes that host path — omit it if
+                 you do not need filesystem access.
   --destroy      Delete the clone when the run ends (default: keep until crypt destroy).
   --no-local     Block VM-to-host and VM-to-VM network on the clone (Anka Enterprise).
   --vm NAME      Base VM to clone (default: crypt-base).

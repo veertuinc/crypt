@@ -36,7 +36,7 @@ func (c *config) bindPersistentFlags(cmd *cobra.Command) {
 func (c *config) bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().Uint32Var(&c.cpu, "cpu", 0, "override vCPU core count (0 = use the VM's setting)")
 	cmd.Flags().Uint32Var(&c.memory, "memory", 0, "override RAM in megabytes (0 = use the VM's setting)")
-	cmd.Flags().StringArrayVar(&c.mountPaths, "mount", nil, "host directory to share with the VM (repeatable; pass . for the current directory; optional :guest_folder_name to set the guest path)")
+	cmd.Flags().StringArrayVar(&c.mountPaths, "mount", nil, "host directory to share with the VM (repeatable; pass . for the current directory; optional :folder_name for the name under /Volumes/My Shared Files)")
 	cmd.Flags().BoolVar(&c.noLocal, "no-local", false, "block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)")
 	cmd.Flags().BoolVar(&c.destroy, "destroy", false, "delete the clone when the run ends (default: keep until crypt destroy)")
 

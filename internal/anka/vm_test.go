@@ -144,14 +144,14 @@ exit 1
 
 func TestMountInvokesAnkaWithGuestFolderName(t *testing.T) {
 	c := fakeAnka(t, `
-if [ "$1" = mount ] && [ "$2" = clone-1 ] && [ "$3" = /Users/dev/.grok/skills:/Users/dev/.grok/skills ]; then
+if [ "$1" = mount ] && [ "$2" = clone-1 ] && [ "$3" = /Users/dev/.grok/skills:grok-skills ]; then
   exit 0
 fi
 echo "unexpected args: $@" >&2
 exit 1
 `)
 
-	if err := c.Mount(context.Background(), "clone-1", "/Users/dev/.grok/skills:/Users/dev/.grok/skills"); err != nil {
+	if err := c.Mount(context.Background(), "clone-1", "/Users/dev/.grok/skills:grok-skills"); err != nil {
 		t.Fatalf("Mount() error: %v", err)
 	}
 }
