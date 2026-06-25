@@ -3,10 +3,14 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/veertuinc/crypt/internal/anka"
 )
 
 func TestSanitize(t *testing.T) {
@@ -158,26 +162,57 @@ func TestShouldNotSuppressLifecycleLogsForFreshStoppedOrDestroyRuns(t *testing.T
 	}
 }
 
-func TestResolveMountPaths(t *testing.T) {
+func TestResolveMountSpecs(t *testing.T) {
 	wd := t.TempDir()
 	t.Chdir(wd)
 
-	got, err := resolveMountPaths([]string{".", wd})
+	got, err := resolveMountSpecs([]string{".", wd})
 	if err != nil {
-		t.Fatalf("resolveMountPaths() error: %v", err)
+		t.Fatalf("resolveMountSpecs() error: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("resolveMountPaths() len = %d, want 2", len(got))
+		t.Fatalf("resolveMountSpecs() len = %d, want 2", len(got))
 	}
-	if got[0] != got[1] {
-		t.Fatalf("resolveMountPaths()[0] = %q, [1] = %q, want same absolute path", got[0], got[1])
+	if got[0].hostPath != got[1].hostPath {
+		t.Fatalf("resolveMountSpecs()[0].hostPath = %q, [1].hostPath = %q, want same absolute path", got[0].hostPath, got[1].hostPath)
 	}
-	if !filepath.IsAbs(got[0]) {
-		t.Fatalf("resolveMountPaths()[0] = %q, want absolute path", got[0])
+	if !filepath.IsAbs(got[0].hostPath) {
+		t.Fatalf("resolveMountSpecs()[0].hostPath = %q, want absolute path", got[0].hostPath)
+	}
+	if got[0].guestWorkDir() != path.Join(anka.SharedFilesRoot, filepath.Base(got[0].hostPath)) {
+		t.Fatalf("guestWorkDir() = %q, want default shared-files path", got[0].guestWorkDir())
 	}
 
-	if _, err := resolveMountPaths([]string{"--reasoning-effort"}); err == nil {
-		t.Fatal("resolveMountPaths(flag-like path) error = nil, want error")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error: %v", err)
+	}
+	guestSkills := filepath.Join(home, ".grok", "skills")
+	spec, err := parseMountSpec("~/.grok/skills:" + guestSkills)
+	if err != nil {
+		t.Fatalf("parseMountSpec() error: %v", err)
+	}
+	if spec.hostPath != guestSkills {
+		t.Fatalf("hostPath = %q, want %q", spec.hostPath, guestSkills)
+	}
+	if spec.guestFolderName != guestSkills {
+		t.Fatalf("guestFolderName = %q, want %q", spec.guestFolderName, guestSkills)
+	}
+	if spec.ankaArg() != guestSkills+":"+guestSkills {
+		t.Fatalf("ankaArg() = %q, want %q", spec.ankaArg(), guestSkills+":"+guestSkills)
+	}
+	if spec.guestWorkDir() != guestSkills {
+		t.Fatalf("guestWorkDir() = %q, want %q", spec.guestWorkDir(), guestSkills)
+	}
+	if spec.unmountRef() != guestSkills {
+		t.Fatalf("unmountRef() = %q, want %q", spec.unmountRef(), guestSkills)
+	}
+
+	if _, err := resolveMountSpecs([]string{"--reasoning-effort"}); err == nil {
+		t.Fatal("resolveMountSpecs(flag-like path) error = nil, want error")
+	}
+	if _, err := parseMountSpec("/tmp/project:"); err == nil {
+		t.Fatal("parseMountSpec(empty guest) error = nil, want error")
 	}
 }
 

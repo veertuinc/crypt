@@ -169,6 +169,7 @@ The mount is working and accessible.
 ```sh
 crypt claude --mount . "keep going"                          # mount current directory into the VM for this run
 crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple host directories
+crypt grok --mount . --mount ~/.grok/skills:~/.grok/skills "fix the test"  # mount skills at the same guest path
 crypt claude                                               # interactive; VM kept until crypt destroy
 crypt codex-fugu --mount . "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
 crypt grok --mount . "fix the failing test"                  # Grok Build
@@ -186,7 +187,7 @@ Flags:
 | `--vm`       | `crypt-base` | Base Anka VM to clone for the sandbox              |
 | `--cpu`      | `0`          | Override vCPU core count (`0` = use the VM setting) |
 | `--memory`   | `0`          | Override RAM in MB (`0` = use the VM setting)       |
-| `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory) |
+| `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory; optional `:guest_folder_name` for the guest path) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
 <!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 
@@ -201,8 +202,10 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
    the base VM instead). -->
 3. `anka start` the clone (applying any `--cpu` / `--memory` overrides first).
 4. With `--mount PATH`, `anka mount <clone> <path>` — each directory appears under
-   `/Volumes/My Shared Files/<folder-name>` in the guest. The agent starts in the
-   first mounted directory. Changes are visible on the host. Only mount directories
+   `/Volumes/My Shared Files/<folder-name>` in the guest by default. Use
+   `--mount HOST:GUEST` to choose the guest folder name or an absolute guest path
+   (for example `~/.grok/skills:~/.grok/skills`). The agent starts in the first
+   mounted directory. Changes are visible on the host. Only mount directories
    you trust the agent with.
 5. Authorize Crypt's SSH key in the clone via `anka run`, then connect over SSH.
    Launch the agent with its unattended-mode flags injected. For Claude Code,

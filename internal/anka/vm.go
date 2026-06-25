@@ -111,10 +111,10 @@ func (c *Client) HasMount(ctx context.Context, vm, hostPath string) (bool, error
 	return false, nil
 }
 
-// Mount shares a host directory into a running VM. Inside the guest it appears
-// under SharedFilesRoot, in a folder named after the host directory.
-func (c *Client) Mount(ctx context.Context, vm, hostPath string) error {
-	return c.run(ctx, "mount", vm, hostPath)
+// Mount shares a host directory into a running VM. The mountArg is passed to
+// `anka mount` verbatim, e.g. /host/path or /host/path:guest_folder_name.
+func (c *Client) Mount(ctx context.Context, vm, mountArg string) error {
+	return c.run(ctx, "mount", vm, mountArg)
 }
 
 // Unmount removes a mounted directory from a running VM by mount reference

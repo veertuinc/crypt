@@ -194,45 +194,49 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 	}
 
-	mountPaths, err := resolveMountPaths(opts.MountPaths)
+	mountSpecs, err := resolveMountSpecs(opts.MountPaths)
 	if err != nil {
 		return err
 	}
 
 	var guestDir string
-	if len(mountPaths) > 0 {
-		var mountedThisRun []string
-		for _, hostPath := range mountPaths {
-			alreadyMounted, err := client.HasMount(ctx, clone, hostPath)
+	if len(mountSpecs) > 0 {
+		var mountedThisRun []mountSpec
+		for _, spec := range mountSpecs {
+			alreadyMounted, err := client.HasMount(ctx, clone, spec.hostPath)
 			if err != nil {
 				return fmt.Errorf("checking mounts: %w", err)
 			}
 			if alreadyMounted {
 				if !suppressLifecycleLogs {
-					fmt.Fprintf(os.Stderr, "crypt: %s is already mounted\n", hostPath)
+					fmt.Fprintf(os.Stderr, "crypt: %s is already mounted\n", spec.hostPath)
 				}
 				continue
 			}
 			if !suppressLifecycleLogs {
-				fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", hostPath)
+				if spec.guestFolderName != "" {
+					fmt.Fprintf(os.Stderr, "crypt: mounting %s at %s\n", spec.hostPath, spec.guestWorkDir())
+				} else {
+					fmt.Fprintf(os.Stderr, "crypt: mounting %s\n", spec.hostPath)
+				}
 			}
-			if err := client.Mount(ctx, clone, hostPath); err != nil {
-				return fmt.Errorf("mounting %s: %w", hostPath, err)
+			if err := client.Mount(ctx, clone, spec.ankaArg()); err != nil {
+				return fmt.Errorf("mounting %s: %w", spec.hostPath, err)
 			}
-			mountedThisRun = append(mountedThisRun, hostPath)
+			mountedThisRun = append(mountedThisRun, spec)
 		}
 		if len(mountedThisRun) > 0 && shouldUnmountAfterRun(opts, running) {
 			defer func() {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
 				defer cancel()
-				for _, hostPath := range mountedThisRun {
-					if err := client.Unmount(cleanupCtx, clone, filepath.Base(hostPath)); err != nil && !suppressLifecycleLogs {
-						fmt.Fprintf(os.Stderr, "crypt: warning: failed to unmount %s from %s: %v\n", hostPath, clone, err)
+				for _, spec := range mountedThisRun {
+					if err := client.Unmount(cleanupCtx, clone, spec.unmountRef()); err != nil && !suppressLifecycleLogs {
+						fmt.Fprintf(os.Stderr, "crypt: warning: failed to unmount %s from %s: %v\n", spec.hostPath, clone, err)
 					}
 				}
 			}()
 		}
-		guestDir = path.Join(anka.SharedFilesRoot, filepath.Base(mountPaths[0]))
+		guestDir = mountSpecs[0].guestWorkDir()
 	}
 
 	warnIfIPFilterBlocksSSH(ctx, client, clone, suppressLifecycleLogs)
@@ -397,26 +401,101 @@ func shouldUnmountAfterRun(opts Options, wasRunningAtMount bool) bool {
 	return len(opts.MountPaths) > 0 && wasRunningAtMount && !opts.Destroy
 }
 
-func resolveMountPaths(paths []string) ([]string, error) {
+func resolveMountSpecs(paths []string) ([]mountSpec, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	resolved := make([]string, 0, len(paths))
+	specs := make([]mountSpec, 0, len(paths))
 	for _, rawPath := range paths {
-		rawPath = strings.TrimSpace(rawPath)
-		if rawPath == "" {
-			return nil, fmt.Errorf("--mount requires a host path (pass . for the current directory)")
-		}
-		if strings.HasPrefix(rawPath, "-") {
-			return nil, fmt.Errorf("--mount path %q looks like a flag; pass the directory explicitly (e.g. --mount .)", rawPath)
-		}
-		absPath, err := filepath.Abs(rawPath)
+		spec, err := parseMountSpec(rawPath)
 		if err != nil {
-			return nil, fmt.Errorf("resolving mount path %q: %w", rawPath, err)
+			return nil, err
 		}
-		resolved = append(resolved, absPath)
+		specs = append(specs, spec)
 	}
-	return resolved, nil
+	return specs, nil
+}
+
+type mountSpec struct {
+	hostPath        string
+	guestFolderName string
+}
+
+func parseMountSpec(rawPath string) (mountSpec, error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return mountSpec{}, fmt.Errorf("--mount requires a host path (pass . for the current directory)")
+	}
+	if strings.HasPrefix(rawPath, "-") {
+		return mountSpec{}, fmt.Errorf("--mount path %q looks like a flag; pass the directory explicitly (e.g. --mount .)", rawPath)
+	}
+
+	hostRaw, guestFolderName, hasGuest := strings.Cut(rawPath, ":")
+	if hasGuest {
+		guestFolderName = strings.TrimSpace(guestFolderName)
+		if guestFolderName == "" {
+			return mountSpec{}, fmt.Errorf("--mount guest folder name cannot be empty in %q", rawPath)
+		}
+	}
+
+	hostRaw, err := expandHome(strings.TrimSpace(hostRaw))
+	if err != nil {
+		return mountSpec{}, fmt.Errorf("resolving mount host path %q: %w", rawPath, err)
+	}
+	hostPath, err := filepath.Abs(hostRaw)
+	if err != nil {
+		return mountSpec{}, fmt.Errorf("resolving mount host path %q: %w", rawPath, err)
+	}
+
+	if hasGuest {
+		guestFolderName, err = expandHome(guestFolderName)
+		if err != nil {
+			return mountSpec{}, fmt.Errorf("resolving mount guest folder %q: %w", guestFolderName, err)
+		}
+	}
+
+	return mountSpec{
+		hostPath:        hostPath,
+		guestFolderName: guestFolderName,
+	}, nil
+}
+
+func (spec mountSpec) ankaArg() string {
+	if spec.guestFolderName == "" {
+		return spec.hostPath
+	}
+	return spec.hostPath + ":" + spec.guestFolderName
+}
+
+func (spec mountSpec) guestWorkDir() string {
+	if spec.guestFolderName == "" {
+		return path.Join(anka.SharedFilesRoot, filepath.Base(spec.hostPath))
+	}
+	if filepath.IsAbs(spec.guestFolderName) {
+		return spec.guestFolderName
+	}
+	return path.Join(anka.SharedFilesRoot, spec.guestFolderName)
+}
+
+func (spec mountSpec) unmountRef() string {
+	if spec.guestFolderName != "" {
+		return spec.guestFolderName
+	}
+	return filepath.Base(spec.hostPath)
+}
+
+func expandHome(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
 }
 
 func waitForVMIP(ctx context.Context, lookup func(context.Context) (string, error), timeout, interval time.Duration) (string, error) {
