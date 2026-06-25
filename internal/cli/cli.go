@@ -35,8 +35,9 @@ Usage:
   crypt destroy                                  # or crypt --name frontend destroy
 
 One-time setup:
-  1. Create a base VM (default name "crypt-base"; override with --vm):
-       ` + "`anka create crypt-base latest`" + `
+  1. Get the getting started template:
+       ` + "`anka --debug pull -o2 --tag 26.4.1-arm64 veertu/getting-started-templates https://registry.hub.docker.com`" + ` then clone it with ` + "`anka clone getting-started-templates crypt-base`" + `
+     or create a new VM with ` + "`anka create crypt-base latest`" + `
   2. Start it, install and authenticate your agent(s), then stop the VM.
      Crypt clones this VM for every run.
 

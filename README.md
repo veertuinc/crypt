@@ -66,16 +66,26 @@ go install github.com/veertuinc/crypt@latest
 
 ## Prepare a base VM (one time)
 
-Crypt does not download VM templates. You create and prepare your own base VM, and
-Crypt clones it for each run.
+Crypt clones a prepared base VM for each run. Download or create that base VM once,
+then boot it and authenticate the agent(s) you want to use.
 
-1. Create the base VM (name it `crypt-base`, or anything and pass `--vm` later):
+1. Get the base VM (default name `crypt-base`; use any name and pass `--vm` later):
+
+   **Pull the public template from Docker Hub** (Apple Silicon; creates `crypt-base`):
+
+   ```sh
+   anka --debug pull -o2 --tag 26.4.1-arm64 veertu/getting-started-templates https://registry.hub.docker.com
+   anka clone getting-started-templates crypt-base
+   ```
+
+   **Or create locally** with the latest macOS template from Anka:
 
    ```sh
    anka create crypt-base latest
    ```
 
-2. Boot it and install + authenticate the agent(s) you want to use inside it:
+2. Boot it and install + authenticate the agent(s) you want to use inside it
+   (skip installs that are already present in a pulled template):
 
    ```sh
    anka start crypt-base

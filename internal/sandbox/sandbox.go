@@ -75,7 +75,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("base VM %q not found; create and prepare it first, e.g. `anka create %s latest`", opts.BaseVM, opts.BaseVM)
+		return fmt.Errorf("base VM %q not found; pull or create and prepare it first, e.g. `anka pull ... veertu/getting-started-templates` then `anka clone getting-started-templates %s` or create a new VM with `anka create %s latest`", opts.BaseVM, opts.BaseVM, opts.BaseVM)
 	}
 
 	cwd, err := os.Getwd()
