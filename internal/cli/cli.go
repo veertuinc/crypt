@@ -50,6 +50,8 @@ Flags:
                  ~/.grok/skills:grok-skills). Required when the agent needs to
                  read or edit project files. Exposes that host path — omit it if
                  you do not need filesystem access.
+  --env KEY=VAL  Export an environment variable in the guest before launching
+                 the agent (repeatable).
   --destroy      Delete the clone when the run ends (default: keep until crypt destroy).
   --no-local     Block VM-to-host and VM-to-VM network on the clone (Anka Enterprise).
   --vm NAME      Base VM to clone (default: crypt-base).

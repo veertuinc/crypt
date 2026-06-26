@@ -45,6 +45,8 @@ type Options struct {
 	Memory uint32
 	// MountPaths lists host directories to share into the guest via anka mount.
 	MountPaths []string
+	// GuestEnv lists KEY=VALUE pairs exported in the guest before the agent starts.
+	GuestEnv []string
 	// NoLocal blocks VM-to-VM and VM-to-host network on the clone (anka network --no-local).
 	NoLocal bool
 	// Destroy deletes the clone when the run ends instead of keeping it on disk.
@@ -260,7 +262,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 	}
 
-	runErr := runAgentSSH(ctx, conn, guestDir, ag, userArgs)
+	runErr := runAgentSSH(ctx, conn, guestDir, opts.GuestEnv, ag, userArgs)
 	if runErr != nil && !suppressLifecycleLogs {
 		// A non-zero agent exit is surfaced but is not a Crypt failure.
 		fmt.Fprintf(os.Stderr, "crypt: %s exited: %v\n", ag.Name, runErr)
@@ -555,10 +557,6 @@ func sanitize(name string) string {
 	}
 	return cleaned
 }
-
-// guestEnvPrefix exports environment variables that tell agents they are
-// running inside Crypt's isolated VM, so safety prompts can be skipped.
-const guestEnvPrefix = "export IS_SANDBOX=1; "
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

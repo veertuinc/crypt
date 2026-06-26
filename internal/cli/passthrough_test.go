@@ -31,6 +31,11 @@ func TestPassthroughAgentArgs(t *testing.T) {
 			want: []string{"--reasoning-effort", "high"},
 		},
 		{
+			name: "env flag stripped",
+			args: []string{"crypt", "grok", "--mount", ".", "--env", "ATRIUM_SOCKET=/tmp/sock", "fix the test"},
+			want: []string{"fix the test"},
+		},
+		{
 			name: "double dash separator",
 			args: []string{"crypt", "grok", "--mount", ".", "--", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},

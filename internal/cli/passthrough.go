@@ -30,6 +30,7 @@ var cryptRunFlags = flagSet{
 		"cpu":    true,
 		"memory": true,
 		"mount":  true,
+		"env":    true,
 	},
 }
 

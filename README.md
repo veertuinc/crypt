@@ -177,6 +177,7 @@ The mount is working and accessible.
 #### Examples
 
 ```sh
+crypt grok --mount . --env ATRIUM_SOCKET=/Volumes/My\ Shared\ Files/atrium/atrium.sock "fix the test"
 crypt claude --mount . "keep going"                          # mount current directory into the VM for this run
 crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple host directories
 crypt grok --mount . --mount ~/.grok/skills:grok-skills "fix the test"  # skills appear under /Volumes/My Shared Files/grok-skills
@@ -198,6 +199,7 @@ Flags:
 | `--cpu`      | `0`          | Override vCPU core count (`0` = use the VM setting) |
 | `--memory`   | `0`          | Override RAM in MB (`0` = use the VM setting)       |
 | `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory; optional `:folder_name` under `/Volumes/My Shared Files`) |
+| `--env`      | *(none)* | Environment variable to export in the guest before launching the agent (repeatable; `KEY=VALUE`) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
 <!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 

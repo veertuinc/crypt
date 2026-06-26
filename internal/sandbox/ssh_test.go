@@ -72,11 +72,42 @@ func TestAuthorizedKeyScriptCreatesAndAppends(t *testing.T) {
 }
 
 func TestRemoteCommandChangesDirectory(t *testing.T) {
-	got := remoteCommand("/Volumes/My Shared Files/crypt", []string{"grok", "--always-approve"})
+	got, err := remoteCommand("/Volumes/My Shared Files/crypt", nil, []string{"grok", "--always-approve"})
+	if err != nil {
+		t.Fatalf("remoteCommand() error: %v", err)
+	}
 	if !strings.Contains(got, "/Volumes/My Shared Files/crypt") {
 		t.Fatalf("remoteCommand() = %q, want guestDir in command", got)
 	}
 	if !strings.Contains(got, "grok") || !strings.Contains(got, "--always-approve") {
 		t.Fatalf("remoteCommand() = %q, want exec grok", got)
+	}
+	if !strings.Contains(got, "IS_SANDBOX=1") {
+		t.Fatalf("remoteCommand() = %q, want IS_SANDBOX export", got)
+	}
+}
+
+func TestGuestEnvExports(t *testing.T) {
+	got, err := guestEnvExports([]string{"ATRIUM_SOCKET=/tmp/atrium.sock", "FOO=bar=baz"})
+	if err != nil {
+		t.Fatalf("guestEnvExports() error: %v", err)
+	}
+	for _, want := range []string{
+		"export IS_SANDBOX=1",
+		"export ATRIUM_SOCKET='/tmp/atrium.sock'",
+		"export FOO='bar=baz'",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("guestEnvExports() = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestGuestEnvExportsRejectsInvalid(t *testing.T) {
+	cases := []string{"NOEQUALS", "1BAD=ok", "=empty", "BAD-KEY=ok"}
+	for _, tc := range cases {
+		if _, err := guestEnvExports([]string{tc}); err == nil {
+			t.Fatalf("guestEnvExports(%q) error = nil, want error", tc)
+		}
 	}
 }

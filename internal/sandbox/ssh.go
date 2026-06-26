@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,9 +87,13 @@ func logSSHProgress(suppress bool, format string, args ...any) {
 
 // runAgentSSH launches the agent inside the guest over SSH. Interactive runs
 // allocate a TTY; task prompts run headlessly without forwarding host stdin.
-func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, ag agent.Agent, userArgs []string) error {
+func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []string, ag agent.Agent, userArgs []string) error {
 	argv := ag.Command(userArgs)
-	return runSSH(ctx, conn, remoteCommand(guestDir, argv), !agent.HasTaskPrompt(userArgs))
+	remote, err := remoteCommand(guestDir, guestEnv, argv)
+	if err != nil {
+		return err
+	}
+	return runSSH(ctx, conn, remote, !agent.HasTaskPrompt(userArgs))
 }
 
 func runSSH(ctx context.Context, conn sshConn, remoteCommand string, interactive bool) error {
@@ -285,14 +290,37 @@ func sshAccessCommand(user, ip, keyPath string) string {
 
 // remoteCommand builds the single command string SSH runs in the guest: a
 // login shell that cd's into the mounted directory and execs argv.
-func remoteCommand(guestDir string, argv []string) string {
+func remoteCommand(guestDir string, guestEnv []string, argv []string) (string, error) {
 	quoted := make([]string, len(argv))
 	for i, token := range argv {
 		quoted[i] = shellQuote(token)
 	}
-	inner := guestEnvPrefix + "exec " + strings.Join(quoted, " ")
+	envPrefix, err := guestEnvExports(guestEnv)
+	if err != nil {
+		return "", err
+	}
+	inner := envPrefix + "exec " + strings.Join(quoted, " ")
 	if guestDir != "" {
 		inner = "cd " + shellQuote(guestDir) + " && " + inner
 	}
-	return "zsh -lc " + shellQuote(inner)
+	return "zsh -lc " + shellQuote(inner), nil
+}
+
+var guestEnvKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// guestEnvExports builds export statements for the guest login shell. IS_SANDBOX
+// is always set so agents know they are running inside Crypt's VM.
+func guestEnvExports(guestEnv []string) (string, error) {
+	exports := []string{"export IS_SANDBOX=1"}
+	for _, pair := range guestEnv {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || key == "" {
+			return "", fmt.Errorf("invalid --env %q: expected KEY=VALUE", pair)
+		}
+		if !guestEnvKeyPattern.MatchString(key) {
+			return "", fmt.Errorf("invalid --env key %q: must match [A-Za-z_][A-Za-z0-9_]*", key)
+		}
+		exports = append(exports, "export "+key+"="+shellQuote(value))
+	}
+	return strings.Join(exports, "; ") + "; ", nil
 }
