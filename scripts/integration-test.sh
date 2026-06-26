@@ -371,6 +371,11 @@ output_not_contains() {
 	! grep -Fq "$pattern" "$CRYPT_LAST_OUTPUT"
 }
 
+output_line_equals() {
+	local line="$1"
+	tr -d '\r' < "$CRYPT_LAST_OUTPUT" | grep -Fxq "$line"
+}
+
 new_test_dir() {
 	local suffix="$1"
 	CURRENT_TEST_DIR="$WORK_ROOT/$suffix"
@@ -529,6 +534,24 @@ test_run_named_lifecycle() {
 		"$CRYPT_BIN" --name "$vm_name" destroy
 	) >"$CURRENT_TEST_DIR/destroy.log" 2>&1
 	[[ "$?" -eq 0 ]] && assert_vm_gone "$vm_name"
+}
+
+test_run_env() {
+	run_crypt run --env CRYPT_TEST_ENV=env-ok -- /bin/zsh -lc 'printenv CRYPT_TEST_ENV'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_line_equals "env-ok" || return 1
+
+	run_crypt run --env A=alpha --env B=beta -- /bin/zsh -lc 'printenv A; printenv B'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_line_equals "alpha" &&
+		output_line_equals "beta" || return 1
+
+	run_crypt run -- /bin/zsh -lc 'printenv IS_SANDBOX'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_line_equals "1" || return 1
+
+	run_crypt run --env NOTVALID -- /bin/echo fail
+	[[ "$CRYPT_LAST_EXIT" -ne 0 ]] && output_contains "invalid --env" || return 1
+
+	run_crypt destroy
 }
 
 test_agent_lifecycle() {
@@ -887,6 +910,9 @@ main() {
 
 	new_test_dir "run-named"
 	run_test "run --name and destroy --name" test_run_named_lifecycle
+
+	new_test_dir "run-env"
+	run_test "run --env exports guest variables" test_run_env
 
 	if ip_filter_supported; then
 		new_test_dir "run-ipfilter"

@@ -93,7 +93,7 @@ func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []
 	if err != nil {
 		return err
 	}
-	return runSSH(ctx, conn, remote, !agent.HasTaskPrompt(userArgs))
+	return runSSH(ctx, conn, remote, agent.NeedsInteractiveSSH(ag, userArgs))
 }
 
 func runSSH(ctx context.Context, conn sshConn, remoteCommand string, interactive bool) error {

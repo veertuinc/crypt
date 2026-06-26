@@ -101,6 +101,21 @@ func HasTaskPrompt(userArgs []string) bool {
 	return false
 }
 
+// NeedsInteractiveSSH reports whether the guest session should allocate a TTY.
+// Registered agents get a TTY for their interactive TUI; task prompts and
+// crypt run one-shot commands (-c / -lc) run headlessly.
+func NeedsInteractiveSSH(ag Agent, userArgs []string) bool {
+	if _, err := Get(ag.Name); err == nil {
+		return !HasTaskPrompt(userArgs)
+	}
+	for _, arg := range userArgs {
+		if arg == "-c" || arg == "-lc" {
+			return false
+		}
+	}
+	return true
+}
+
 // Command builds the full argument vector to run inside the VM: the agent
 // executable, its injected flags, then the user's own arguments.
 func (a Agent) Command(userArgs []string) []string {

@@ -71,6 +71,9 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	if len(opts.MountPaths) > 0 && !version.AtLeast(minMajor, minMinor) {
 		return fmt.Errorf("Anka %d.%d+ is required for host directory mounts (found %s)", minMajor, minMinor, version)
 	}
+	if _, err := guestEnvExports(opts.GuestEnv); err != nil {
+		return err
+	}
 
 	exists, err := client.Exists(ctx, opts.BaseVM)
 	if err != nil {
