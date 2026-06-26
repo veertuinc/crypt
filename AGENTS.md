@@ -1,2 +1,4 @@
 - Never create commits with "Co-authored-by: Cursor"
 - Always be sure the integration-test.sh covers the features, especially when you just added one
+- Keep the --help/usage output up to date with new features you add
+- New crypt run flags (e.g. `--mount`, `--env`, `--socket`) must be registered in `internal/cli/flags.go` **and** listed in `cryptRunFlags` in `internal/cli/passthrough.go`; otherwise they reach the agent and break. Add a passthrough test in `passthrough_test.go`.

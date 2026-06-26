@@ -36,6 +36,16 @@ func TestPassthroughAgentArgs(t *testing.T) {
 			want: []string{"fix the test"},
 		},
 		{
+			name: "socket flag stripped",
+			args: []string{"crypt", "grok", "--mount", ".", "--socket", "~/.atrium/ipc/stable.sock::ATRIUM_SOCKET"},
+			want: nil,
+		},
+		{
+			name: "socket flag stripped with task prompt",
+			args: []string{"crypt", "grok", "--mount", ".", "--socket", "~/.atrium/ipc/stable.sock::ATRIUM_SOCKET", "fix the test"},
+			want: []string{"fix the test"},
+		},
+		{
 			name: "double dash separator",
 			args: []string{"crypt", "grok", "--mount", ".", "--", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},

@@ -61,6 +61,30 @@ BASE_VM_FILTER_HAD_RULES=false
 log() { printf '%s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 
+format_shell_command() {
+	local -a cmd=( "$@" )
+	local formatted="" arg
+	for arg in "${cmd[@]}"; do
+		formatted+=" $(printf '%q' "$arg")"
+	done
+	printf '%s' "${formatted# }"
+}
+
+crypt_command_line() {
+	local -a cmd=( "$CRYPT_BIN" "$@" )
+	printf 'cd %q && %s' "$CURRENT_TEST_DIR" "$(format_shell_command "${cmd[@]}")"
+}
+
+log_crypt_command() {
+	log "  $ $(crypt_command_line "$@")"
+}
+
+record_crypt_command() {
+	local output_file="$1"
+	shift
+	printf '# %s\n' "$(crypt_command_line "$@")" >>"$output_file"
+}
+
 run_test() {
 	local name="$1"
 	shift
@@ -367,6 +391,9 @@ run_crypt() {
 	local exit_code=0
 	local -a cmd=( "$CRYPT_BIN" "$@" )
 
+	log_crypt_command "$@"
+	record_crypt_command "$output_file" "$@"
+
 	if crypt_command_streams_to_terminal "${1:-}"; then
 		log_live_output_hint
 	fi
@@ -497,7 +524,7 @@ test_version() {
 
 test_help() {
 	run_crypt --help
-	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "destroy"
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "destroy" && output_contains "--socket"
 }
 
 test_subcommand_help() {
@@ -552,6 +579,7 @@ test_run_named_lifecycle() {
 	run_crypt --name "$vm_name" run -- /bin/echo keep
 	track_vm_name "$vm_name"
 	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && assert_vm_exists "$vm_name" || return 1
+	log_crypt_command --name "$vm_name" destroy
 	(
 		cd "$CURRENT_TEST_DIR"
 		"$CRYPT_BIN" --name "$vm_name" destroy
@@ -801,6 +829,9 @@ start_interactive_agent() {
 	ensure_base_vm_stopped
 	: >"$INTERACTIVE_OUTPUT_FILE"
 
+	log_crypt_command "${crypt_args[@]}"
+	record_crypt_command "$INTERACTIVE_OUTPUT_FILE" "${crypt_args[@]}"
+
 	log_live_output_hint
 	INTERACTIVE_TAIL_PID="$(start_output_stream "$INTERACTIVE_OUTPUT_FILE")"
 
@@ -858,6 +889,7 @@ finish_interactive_agent_test() {
 		tail -40 "$output_file" >&2 || true
 		return 1
 	fi
+	log_crypt_command destroy
 	(
 		cd "$CURRENT_TEST_DIR" || exit 1
 		"$CRYPT_BIN" destroy

@@ -31,6 +31,7 @@ Usage:
   crypt --name frontend codex --mount . -- "refactor the parser"
   crypt codex-fugu --mount . "investigate the flaky test"
   crypt grok --mount . --mount ~/.atrium/bin "fix the failing test"
+  crypt grok --socket ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET "from the VM"
   crypt --name frontend run -- /bin/bash -l
   crypt destroy                                  # or crypt --name frontend destroy
 
@@ -52,6 +53,10 @@ Flags:
                  you do not need filesystem access.
   --env KEY=VAL  Export an environment variable in the guest before launching
                  the agent (repeatable).
+  --socket PATH  Forward a host UNIX socket into the guest over SSH (repeatable;
+                 HOSTPATH[:GUESTPATH[:ENVVAR]]). Use when a host app exposes a
+                 .sock file that virtiofs cannot mount. Optionally bind an env
+                 var (for example ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET).
   --destroy      Delete the clone when the run ends (default: keep until crypt destroy).
   --no-local     Block VM-to-host and VM-to-VM network on the clone (Anka Enterprise).
   --vm NAME      Base VM to clone (default: crypt-base).

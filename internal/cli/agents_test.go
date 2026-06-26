@@ -1,13 +1,29 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/veertuinc/crypt/internal/agent"
 	"github.com/veertuinc/crypt/internal/sandbox"
 )
+
+func TestRootHelpMentionsSocket(t *testing.T) {
+	cmd := newRootCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "--socket") {
+		t.Fatalf("root help missing --socket:\n%s", out)
+	}
+}
 
 func TestInteractiveAgentDoesNotDestroyCloneByDefault(t *testing.T) {
 	var got sandbox.Options
