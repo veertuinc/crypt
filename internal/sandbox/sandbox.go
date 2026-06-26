@@ -47,6 +47,9 @@ type Options struct {
 	MountPaths []string
 	// GuestEnv lists KEY=VALUE pairs exported in the guest before the agent starts.
 	GuestEnv []string
+	// Sockets lists host UNIX sockets to forward into the guest over SSH.
+	// Each entry is HOSTPATH[:GUESTPATH[:ENVVAR]].
+	Sockets []string
 	// NoLocal blocks VM-to-VM and VM-to-host network on the clone (anka network --no-local).
 	NoLocal bool
 	// Destroy deletes the clone when the run ends instead of keeping it on disk.
@@ -72,6 +75,10 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		return fmt.Errorf("Anka %d.%d+ is required for host directory mounts (found %s)", minMajor, minMinor, version)
 	}
 	if _, err := guestEnvExports(opts.GuestEnv); err != nil {
+		return err
+	}
+	socketSpecs, err := resolveSocketSpecs(opts.Sockets, sshUser())
+	if err != nil {
 		return err
 	}
 
@@ -251,6 +258,17 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		return err
 	}
 
+	if len(socketSpecs) > 0 {
+		if err := ensureGuestSocketDirs(ctx, conn, socketSpecs); err != nil {
+			return fmt.Errorf("preparing guest socket directories: %w", err)
+		}
+		if !suppressLifecycleLogs {
+			for _, line := range socketForwardInfoLines(socketSpecs) {
+				fmt.Fprintln(os.Stderr, line)
+			}
+		}
+	}
+
 	if ag.Name == "claude" {
 		if err := ensureClaudeWorkspaceTrust(ctx, conn, conn.user, guestDir); err != nil {
 			return fmt.Errorf("preparing claude workspace trust: %w", err)
@@ -265,7 +283,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 	}
 
-	runErr := runAgentSSH(ctx, conn, guestDir, opts.GuestEnv, ag, userArgs)
+	runErr := runAgentSSH(ctx, conn, guestDir, opts.GuestEnv, socketSpecs, ag, userArgs)
 	if runErr != nil && !suppressLifecycleLogs {
 		// A non-zero agent exit is surfaced but is not a Crypt failure.
 		fmt.Fprintf(os.Stderr, "crypt: %s exited: %v\n", ag.Name, runErr)
@@ -372,6 +390,20 @@ func vmIsRunning(ctx context.Context, client *anka.Client, vm string) (bool, err
 	default:
 		return false, nil
 	}
+}
+
+// socketForwardInfoLines describes each forwarded socket for the run log,
+// including the bound env var when one is set.
+func socketForwardInfoLines(specs []socketSpec) []string {
+	lines := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		line := fmt.Sprintf("crypt: forwarding host socket %s -> guest %s", spec.hostPath, spec.guestPath)
+		if spec.envVar != "" {
+			line += fmt.Sprintf(" (%s)", spec.envVar)
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func vmAccessInfoLines(user, ip, keyPath string) []string {

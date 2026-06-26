@@ -78,7 +78,11 @@ run_test() {
 		tail -40 "$CRYPT_LAST_OUTPUT" >&2 || true
 	fi
 	TESTS_FAILED=$((TESTS_FAILED + 1))
-	return 1
+	log ""
+	log "========================================"
+	log "Results: $TESTS_PASSED passed, $TESTS_FAILED failed, $TESTS_SKIPPED skipped ($TESTS_RUN total)"
+	log "Stopping on first failure."
+	exit 1
 }
 
 skip_test() {
@@ -191,6 +195,25 @@ ip_filter_supported() {
 	fi
 	anka modify "$CRYPT_BASE_VM" network --filter off >/dev/null 2>&1 || true
 	return 0
+}
+
+# host_unix_nc_supported reports whether the host nc can listen on a UNIX socket,
+# which the --socket forwarding test relies on to serve a token to the guest.
+host_unix_nc_supported() {
+	command -v nc >/dev/null 2>&1 || return 1
+	local probe="${WORK_ROOT:-${TMPDIR:-/tmp}}/.nc-probe.sock"
+	rm -f "$probe"
+	( printf 'x' | nc -lU "$probe" >/dev/null 2>&1 ) &
+	local pid=$! waited=0 ok=1
+	while [[ ! -S "$probe" && $waited -lt 6 ]]; do
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+	[[ -S "$probe" ]] && ok=0
+	kill "$pid" 2>/dev/null || true
+	wait "$pid" 2>/dev/null || true
+	rm -f "$probe"
+	return $ok
 }
 
 assert_vm_exists() {
@@ -554,6 +577,52 @@ test_run_env() {
 	run_crypt destroy
 }
 
+# Forwards a host UNIX socket into the guest and proves the guest can talk to it
+# end to end over the SSH tunnel (ssh -R), then checks a bad spec fails fast.
+test_run_socket() {
+	local host_sock="$CURRENT_TEST_DIR/host.sock"
+	local guest_sock="/tmp/crypt-it-socket-$$.sock"
+	local listener_pid=""
+
+	rm -f "$host_sock"
+	# One-shot host listener: hand the known token to the relay connection the
+	# host-side ssh makes when the guest opens the forwarded socket.
+	( printf 'CRYPT_SOCKET_OK\n' | nc -lU "$host_sock" >/dev/null 2>&1 ) &
+	listener_pid=$!
+
+	local waited=0
+	while [[ ! -S "$host_sock" && $waited -lt 10 ]]; do
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+	if [[ ! -S "$host_sock" ]]; then
+		kill "$listener_pid" 2>/dev/null || true
+		wait "$listener_pid" 2>/dev/null || true
+		log "host UNIX socket listener did not start"
+		return 1
+	fi
+
+	# The guest sees the socket at $CRYPT_SOCK (auto-exported by the ENVVAR field)
+	# and reads the token through it. The piped sleep keeps the client open long
+	# enough to receive the server's reply before EOF.
+	run_crypt run --socket "$host_sock:$guest_sock:CRYPT_SOCK" -- \
+		/bin/zsh -lc 'test -S "$CRYPT_SOCK" && printf "GUEST_SOCK_OK %s\n" "$CRYPT_SOCK"; { sleep 1; } | nc -U "$CRYPT_SOCK"'
+
+	kill "$listener_pid" 2>/dev/null || true
+	wait "$listener_pid" 2>/dev/null || true
+
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "crypt: forwarding host socket" &&
+		output_contains "GUEST_SOCK_OK $guest_sock" &&
+		output_contains "CRYPT_SOCKET_OK" || return 1
+
+	# A non-absolute guest path is rejected before any VM work happens.
+	run_crypt run --socket "$host_sock:relative-guest" -- /bin/echo fail
+	[[ "$CRYPT_LAST_EXIT" -ne 0 ]] && output_contains "must be absolute" || return 1
+
+	run_crypt destroy
+}
+
 test_agent_lifecycle() {
 	local agent="$1"
 	local vm_name
@@ -913,6 +982,13 @@ main() {
 
 	new_test_dir "run-env"
 	run_test "run --env exports guest variables" test_run_env
+
+	if host_unix_nc_supported; then
+		new_test_dir "run-socket"
+		run_test "run --socket forwards a host UNIX socket" test_run_socket
+	else
+		skip_test "run --socket forwards a host UNIX socket" "host nc lacks UNIX socket support"
+	fi
 
 	if ip_filter_supported; then
 		new_test_dir "run-ipfilter"

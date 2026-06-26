@@ -11,10 +11,11 @@ type config struct {
 	baseVM     string
 	cpu        uint32
 	memory     uint32
-	mountPaths []string
-	envVars    []string
-	noLocal    bool
-	destroy    bool
+	mountPaths  []string
+	envVars     []string
+	socketSpecs []string
+	noLocal     bool
+	destroy     bool
 }
 
 func (c config) runOptions() sandbox.Options {
@@ -25,6 +26,7 @@ func (c config) runOptions() sandbox.Options {
 		Memory:     c.memory,
 		MountPaths: c.mountPaths,
 		GuestEnv:   c.envVars,
+		Sockets:    c.socketSpecs,
 		NoLocal:    c.noLocal,
 		Destroy:    c.destroy,
 	}
@@ -40,6 +42,7 @@ func (c *config) bindRunFlags(cmd *cobra.Command) {
 	cmd.Flags().Uint32Var(&c.memory, "memory", 0, "override RAM in megabytes (0 = use the VM's setting)")
 	cmd.Flags().StringArrayVar(&c.mountPaths, "mount", nil, "host directory to share with the VM (repeatable; pass . for the current directory; optional :folder_name for the name under /Volumes/My Shared Files)")
 	cmd.Flags().StringArrayVar(&c.envVars, "env", nil, "environment variable to export in the guest before launching the agent (repeatable; KEY=VALUE)")
+	cmd.Flags().StringArrayVar(&c.socketSpecs, "socket", nil, "forward a host UNIX socket into the guest over SSH (repeatable; HOSTPATH[:GUESTPATH[:ENVVAR]])")
 	cmd.Flags().BoolVar(&c.noLocal, "no-local", false, "block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)")
 	cmd.Flags().BoolVar(&c.destroy, "destroy", false, "delete the clone when the run ends (default: keep until crypt destroy)")
 

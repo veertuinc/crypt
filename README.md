@@ -177,7 +177,7 @@ The mount is working and accessible.
 #### Examples
 
 ```sh
-crypt grok --mount . --env ATRIUM_SOCKET=/Volumes/My\ Shared\ Files/atrium/atrium.sock "fix the test"
+crypt grok --mount . --socket ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET "fix the test"  # forward a host app socket into the VM
 crypt claude --mount . "keep going"                          # mount current directory into the VM for this run
 crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple host directories
 crypt grok --mount . --mount ~/.grok/skills:grok-skills "fix the test"  # skills appear under /Volumes/My Shared Files/grok-skills
@@ -200,10 +200,38 @@ Flags:
 | `--memory`   | `0`          | Override RAM in MB (`0` = use the VM setting)       |
 | `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory; optional `:folder_name` under `/Volumes/My Shared Files`) |
 | `--env`      | *(none)* | Environment variable to export in the guest before launching the agent (repeatable; `KEY=VALUE`) |
+| `--socket`   | *(none)* | Forward a host UNIX socket into the guest over the existing SSH connection (repeatable; `HOSTPATH[:GUESTPATH[:ENVVAR]]`) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
 <!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 
 Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
+
+## Forwarding host sockets
+
+macOS virtiofs (used by `--mount`) cannot carry `AF_UNIX` sockets, so you cannot
+mount a host app's `.sock` into the guest. Use `--socket` instead: it forwards a
+host UNIX socket into the guest over the SSH connection Crypt already opens, so
+the VM gets a byte-pipe to exactly that one socket and nothing else on the host.
+
+```sh
+crypt grok --socket ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET "from the VM"
+```
+
+The flag value is `HOSTPATH[:GUESTPATH[:ENVVAR]]`:
+
+- `HOSTPATH` — the socket on the host (supports `~`). It does not need to exist
+  yet; the connection is made the first time the guest uses it.
+- `GUESTPATH` — where the socket appears in the guest. Defaults to
+  `/Users/<ssh-user>/.crypt/sockets/<basename>`.
+- `ENVVAR` — optional; when set, Crypt exports `ENVVAR=GUESTPATH` in the guest so
+  the agent finds the socket automatically (the empty middle field in the example
+  above keeps the default guest path while still binding `ATRIUM_SOCKET`).
+
+Forwarding uses OpenSSH UNIX-domain remote forwarding (`ssh -R`), so the guest's
+sshd needs `AllowStreamLocalForwarding` enabled (the OpenSSH default). The guest
+socket is created when the session starts and removed when it ends. This is
+strictly narrower than giving the VM host SSH access: no host shell, filesystem,
+or other service is reachable — only the listed socket(s).
 
 ## How a run works
 
@@ -220,6 +248,9 @@ Unknown flags (e.g. `--model`, `--resume`) are forwarded to the agent unchanged.
    mounted directory. Changes are visible on the host. Only mount directories
    you trust the agent with.
 5. Authorize Crypt's SSH key in the clone via `anka run`, then connect over SSH.
+   With `--socket`, the agent's SSH connection adds a `-R` UNIX-domain forward so
+   the listed host socket(s) appear in the guest (and any bound env var is
+   exported); the guest socket is created at session start and removed on exit.
    Launch the agent with its unattended-mode flags injected. For Claude Code,
    Crypt also pre-trusts the guest workspace in `~/.claude.json` so the
    "Do you trust this folder?" dialog is skipped. A task prompt

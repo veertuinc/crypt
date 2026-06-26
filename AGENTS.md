@@ -1,1 +1,2 @@
 - Never create commits with "Co-authored-by: Cursor"
+- Always be sure the integration-test.sh covers the features, especially when you just added one

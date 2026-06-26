@@ -87,17 +87,24 @@ func logSSHProgress(suppress bool, format string, args ...any) {
 
 // runAgentSSH launches the agent inside the guest over SSH. Interactive runs
 // allocate a TTY; task prompts run headlessly without forwarding host stdin.
-func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []string, ag agent.Agent, userArgs []string) error {
+// Any forwarded host sockets are exposed to the guest over the same connection.
+func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []string, sockets []socketSpec, ag agent.Agent, userArgs []string) error {
 	argv := ag.Command(userArgs)
+	guestEnv = append(append([]string{}, guestEnv...), socketEnvExports(sockets)...)
 	remote, err := remoteCommand(guestDir, guestEnv, argv)
 	if err != nil {
 		return err
 	}
-	return runSSH(ctx, conn, remote, agent.NeedsInteractiveSSH(ag, userArgs))
+	return runSSH(ctx, conn, remote, sshForwardArgs(sockets), agent.NeedsInteractiveSSH(ag, userArgs))
 }
 
-func runSSH(ctx context.Context, conn sshConn, remoteCommand string, interactive bool) error {
+func runSSH(ctx context.Context, conn sshConn, remoteCommand string, forwards []string, interactive bool) error {
 	args := sshOptions(conn.keyPath)
+	if len(forwards) > 0 {
+		// Remove any stale guest socket file so sshd can rebind on a reused clone.
+		args = append(args, "-o", "StreamLocalBindUnlink=yes")
+		args = append(args, forwards...)
+	}
 	if interactive {
 		args = append(args, "-t")
 	}
@@ -110,6 +117,21 @@ func runSSH(ctx context.Context, conn sshConn, remoteCommand string, interactive
 		cmd.Stdin = os.Stdin
 	}
 	return cmd.Run()
+}
+
+// ensureGuestSocketDirs creates the parent directories of forwarded guest
+// sockets. sshd binds those listeners at session start, before the agent runs,
+// so the directories must already exist.
+func ensureGuestSocketDirs(ctx context.Context, conn sshConn, specs []socketSpec) error {
+	dirs := socketGuestDirs(specs)
+	if len(dirs) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(dirs))
+	for i, dir := range dirs {
+		quoted[i] = shellQuote(dir)
+	}
+	return runSSHScript(ctx, conn, "mkdir -p "+strings.Join(quoted, " "))
 }
 
 // runSSHScript runs a shell script in the guest and returns combined output.
