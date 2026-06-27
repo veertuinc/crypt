@@ -114,6 +114,21 @@ func socketEnvExports(specs []socketSpec) []string {
 	return exports
 }
 
+// socketGuestPaths returns the unique guest socket paths that sshd will bind
+// for remote forwarding.
+func socketGuestPaths(specs []socketSpec) []string {
+	seen := make(map[string]bool)
+	var paths []string
+	for _, spec := range specs {
+		if spec.guestPath == "" || seen[spec.guestPath] {
+			continue
+		}
+		seen[spec.guestPath] = true
+		paths = append(paths, spec.guestPath)
+	}
+	return paths
+}
+
 // socketGuestDirs returns the unique parent directories that must exist in the
 // guest before sshd binds the forwarded socket listeners.
 func socketGuestDirs(specs []socketSpec) []string {

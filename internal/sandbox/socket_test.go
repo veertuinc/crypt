@@ -142,3 +142,19 @@ func TestSocketGuestDirs(t *testing.T) {
 		t.Fatalf("socketGuestDirs() = %v, want %v", got, want)
 	}
 }
+
+func TestSocketGuestPaths(t *testing.T) {
+	specs := []socketSpec{
+		{guestPath: "/Users/anka/.crypt/sockets/stable.sock"},
+		{guestPath: "/Users/anka/.crypt/sockets/stable.sock"},
+		{guestPath: "/Users/anka/.crypt/sockets/other.sock"},
+	}
+	got := socketGuestPaths(specs)
+	want := []string{
+		"/Users/anka/.crypt/sockets/stable.sock",
+		"/Users/anka/.crypt/sockets/other.sock",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("socketGuestPaths() = %v, want %v", got, want)
+	}
+}

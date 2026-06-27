@@ -259,8 +259,8 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	}
 
 	if len(socketSpecs) > 0 {
-		if err := ensureGuestSocketDirs(ctx, conn, socketSpecs); err != nil {
-			return fmt.Errorf("preparing guest socket directories: %w", err)
+		if err := prepareGuestSockets(ctx, conn, socketSpecs); err != nil {
+			return fmt.Errorf("preparing guest socket paths: %w", err)
 		}
 		if !suppressLifecycleLogs {
 			for _, line := range socketForwardInfoLines(socketSpecs) {

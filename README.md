@@ -228,10 +228,13 @@ The flag value is `HOSTPATH[:GUESTPATH[:ENVVAR]]`:
   above keeps the default guest path while still binding `ATRIUM_SOCKET`).
 
 Forwarding uses OpenSSH UNIX-domain remote forwarding (`ssh -R`), so the guest's
-sshd needs `AllowStreamLocalForwarding` enabled (the OpenSSH default). The guest
-socket is created when the session starts and removed when it ends. This is
-strictly narrower than giving the VM host SSH access: no host shell, filesystem,
-or other service is reachable — only the listed socket(s).
+sshd needs `AllowStreamLocalForwarding` enabled (the OpenSSH default). Before
+each run Crypt removes any stale guest socket file left by an unclean prior
+session (crash, `kill -9`, VM snapshot) so sshd can rebind the forward. Without
+that cleanup the socket path can exist on disk with nothing listening — `nc -U`
+returns "Connection refused" even though `test -S "$ATRIUM_SOCKET"` succeeds.
+This is strictly narrower than giving the VM host SSH access: no host shell,
+filesystem, or other service is reachable — only the listed socket(s).
 
 ## How a run works
 

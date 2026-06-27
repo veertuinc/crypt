@@ -101,8 +101,6 @@ func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []
 func runSSH(ctx context.Context, conn sshConn, remoteCommand string, forwards []string, interactive bool) error {
 	args := sshOptions(conn.keyPath)
 	if len(forwards) > 0 {
-		// Remove any stale guest socket file so sshd can rebind on a reused clone.
-		args = append(args, "-o", "StreamLocalBindUnlink=yes")
 		args = append(args, forwards...)
 	}
 	if interactive {
@@ -119,19 +117,32 @@ func runSSH(ctx context.Context, conn sshConn, remoteCommand string, forwards []
 	return cmd.Run()
 }
 
-// ensureGuestSocketDirs creates the parent directories of forwarded guest
-// sockets. sshd binds those listeners at session start, before the agent runs,
-// so the directories must already exist.
-func ensureGuestSocketDirs(ctx context.Context, conn sshConn, specs []socketSpec) error {
+// prepareGuestSockets creates parent directories and removes any stale guest
+// socket files left by an unclean prior SSH session. sshd refuses to bind a
+// remote forward over an existing socket path unless StreamLocalBindUnlink is
+// enabled in sshd_config; explicit removal is more reliable on reused clones.
+func prepareGuestSockets(ctx context.Context, conn sshConn, specs []socketSpec) error {
 	dirs := socketGuestDirs(specs)
-	if len(dirs) == 0 {
+	paths := socketGuestPaths(specs)
+	if len(dirs) == 0 && len(paths) == 0 {
 		return nil
 	}
-	quoted := make([]string, len(dirs))
-	for i, dir := range dirs {
-		quoted[i] = shellQuote(dir)
+	var scriptParts []string
+	if len(dirs) > 0 {
+		quoted := make([]string, len(dirs))
+		for i, dir := range dirs {
+			quoted[i] = shellQuote(dir)
+		}
+		scriptParts = append(scriptParts, "mkdir -p "+strings.Join(quoted, " "))
 	}
-	return runSSHScript(ctx, conn, "mkdir -p "+strings.Join(quoted, " "))
+	if len(paths) > 0 {
+		quoted := make([]string, len(paths))
+		for i, p := range paths {
+			quoted[i] = shellQuote(p)
+		}
+		scriptParts = append(scriptParts, "rm -f "+strings.Join(quoted, " "))
+	}
+	return runSSHScript(ctx, conn, strings.Join(scriptParts, "; "))
 }
 
 // runSSHScript runs a shell script in the guest and returns combined output.

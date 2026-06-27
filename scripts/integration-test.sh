@@ -644,6 +644,40 @@ test_run_socket() {
 		output_contains "GUEST_SOCK_OK $guest_sock" &&
 		output_contains "CRYPT_SOCKET_OK" || return 1
 
+	# Simulate an unclean prior session: socket file remains on a reused clone
+	# but nothing is listening. Crypt must remove it before ssh -R rebinds.
+	local vm_name
+	vm_name="$(vm_name_from_output)"
+	if [[ -z "$vm_name" ]]; then
+		log "could not determine VM name for stale socket test"
+		return 1
+	fi
+	anka run "$vm_name" -- zsh -lc "python3 -c \"import socket; s=socket.socket(socket.AF_UNIX); s.bind('$guest_sock'); s.close()\"" || return 1
+
+	rm -f "$host_sock"
+	( printf 'CRYPT_SOCKET_OK\n' | nc -lU "$host_sock" >/dev/null 2>&1 ) &
+	listener_pid=$!
+	waited=0
+	while [[ ! -S "$host_sock" && $waited -lt 10 ]]; do
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+	if [[ ! -S "$host_sock" ]]; then
+		kill "$listener_pid" 2>/dev/null || true
+		wait "$listener_pid" 2>/dev/null || true
+		log "host UNIX socket listener did not restart for stale socket test"
+		return 1
+	fi
+
+	run_crypt run --socket "$host_sock:$guest_sock:CRYPT_SOCK" -- \
+		/bin/zsh -lc 'test -S "$CRYPT_SOCK" && { sleep 1; } | nc -U "$CRYPT_SOCK"'
+
+	kill "$listener_pid" 2>/dev/null || true
+	wait "$listener_pid" 2>/dev/null || true
+
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "CRYPT_SOCKET_OK" || return 1
+
 	# A non-absolute guest path is rejected before any VM work happens.
 	run_crypt run --socket "$host_sock:relative-guest" -- /bin/echo fail
 	[[ "$CRYPT_LAST_EXIT" -ne 0 ]] && output_contains "must be absolute" || return 1
