@@ -88,9 +88,18 @@ jobs:
             exit 1
           fi
 
-          if ! openssl pkcs12 -in "$certificate_path" -noout -passin "pass:${MACOS_SIGN_PASSWORD}" 2>/dev/null; then
+          # macos-latest can land on macos-26, whose OpenSSL 3 rejects Keychain
+          # exports encrypted with RC2-40-CBC unless -legacy is passed.
+          if openssl pkcs12 -in "$certificate_path" -noout -passin "pass:${MACOS_SIGN_PASSWORD}" 2>/dev/null; then
+            :
+          elif openssl pkcs12 -legacy -in "$certificate_path" -noout -passin "pass:${MACOS_SIGN_PASSWORD}" 2>/dev/null; then
+            echo "Validated PKCS#12 with OpenSSL -legacy (RC2 Keychain export)"
+          else
             echo "MACOS_SIGN_P12 is not a valid PKCS#12 file, or MACOS_SIGN_PASSWORD is incorrect"
+            openssl pkcs12 -legacy -in "$certificate_path" -noout -passin "pass:${MACOS_SIGN_PASSWORD}" 2>&1 \
+              | sed 's/pass:[^[:space:]]*/pass:***/g' || true
             echo "Re-create the secret with: base64 -i Certificates.p12 | pbcopy"
+            echo "Or re-encrypt for OpenSSL 3: openssl pkcs12 -legacy -in Certificates.p12 -nodes | openssl pkcs12 -export -out fixed.p12"
             exit 1
           fi
 
