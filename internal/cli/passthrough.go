@@ -55,12 +55,11 @@ func passthroughAgentArgsFrom(subcommand string, argv []string) []string {
 		args = args[1:]
 	}
 
-	args = cryptRootFlags.skip(args)
-
-	for len(args) > 0 && args[0] != subcommand {
-		args = args[1:]
-	}
-	if len(args) == 0 {
+	// Drop root flags and other tokens only until the agent subcommand.
+	// Do not strip root flags after it — agents such as cursor-agent use
+	// --name on management subcommands (worker start --name ...).
+	args = cryptRootFlags.skipUntil(args, subcommand)
+	if len(args) == 0 || args[0] != subcommand {
 		return nil
 	}
 	args = args[1:]
@@ -69,6 +68,28 @@ func passthroughAgentArgsFrom(subcommand string, argv []string) []string {
 		args = args[1:]
 	}
 	return args
+}
+
+// skipUntil removes flags in s from the prefix of args before stop, then
+// returns the slice that starts at stop (or nil if stop is missing).
+func (s flagSet) skipUntil(args []string, stop string) []string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == stop {
+			return args[i:]
+		}
+		if arg == "--" {
+			return nil
+		}
+		name, isFlag := flagName(arg)
+		if !isFlag {
+			continue
+		}
+		if s.values[name] && !strings.Contains(arg, "=") {
+			i++
+		}
+	}
+	return nil
 }
 
 func (s flagSet) skip(args []string) []string {

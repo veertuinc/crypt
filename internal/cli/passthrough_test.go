@@ -66,3 +66,19 @@ func TestPassthroughAgentArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestPassthroughCursorAgentWorkerName(t *testing.T) {
+	got := passthroughAgentArgsFrom("cursor-agent", []string{
+		"crypt", "--name", "cursor-worker", "cursor-agent",
+		"worker", "start", "--name", "crypt-vm",
+	})
+	want := []string{"worker", "start", "--name", "crypt-vm"}
+	if len(got) != len(want) {
+		t.Fatalf("passthroughAgentArgs() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("passthroughAgentArgs()[%d] = %q, want %q (full %#v)", i, got[i], want[i], got)
+		}
+	}
+}

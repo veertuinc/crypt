@@ -25,14 +25,18 @@ type Agent struct {
 	// PromptFlag, when set, is inserted before userArgs for task prompts (e.g.
 	// Grok's -p for headless single-prompt mode via SSH.
 	PromptFlag string
+	// ManagementCommands lists first-position CLI subcommands that are not task
+	// prompts (for example Cursor's "worker" or "login"). Crypt does not inject
+	// YOLO or task flags before these.
+	ManagementCommands []string
 }
 
 // registry is the single source of truth for the supported agents. Adding a
 // new agent is a one-line entry here; no new command file is required.
 var registry = map[string]Agent{
 	"claude": {
-		Name:        "claude",
-		Summary:     "Run Claude Code in an isolated Anka VM (--dangerously-skip-permissions)",
+		Name:    "claude",
+		Summary: "Run Claude Code in an isolated Anka VM (--dangerously-skip-permissions)",
 		InjectFlags: []string{
 			"--dangerously-skip-permissions",
 			"--settings", `{"skipDangerousModePermissionPrompt":true}`,
@@ -62,6 +66,18 @@ var registry = map[string]Agent{
 		TaskInjectFlags: []string{"--output-format", "plain"},
 		PromptFlag:      "-p",
 	},
+	"cursor-agent": {
+		Name:            "cursor-agent",
+		Summary:         "Run Cursor Agent CLI in an isolated Anka VM (--force, --sandbox disabled)",
+		InjectFlags:     []string{"--force", "--sandbox", "disabled"},
+		TaskInjectFlags: []string{"--trust", "--print"},
+		ManagementCommands: []string{
+			"worker", "login", "logout", "status", "whoami", "about", "models",
+			"mcp", "sandbox", "update", "ls", "resume", "create-chat",
+			"generate-rule", "rule", "help", "install-shell-integration",
+			"uninstall-shell-integration", "acp",
+		},
+	},
 }
 
 // Get returns the agent registered under name.
@@ -83,9 +99,9 @@ func All() []Agent {
 	return agents
 }
 
-// HasTaskPrompt reports whether userArgs include a positional task prompt
-// rather than only agent flags (e.g. --reasoning-effort high).
-func HasTaskPrompt(userArgs []string) bool {
+// firstPositionalArg returns the first non-flag argument, skipping values that
+// follow a flag (e.g. "opus" in --model opus).
+func firstPositionalArg(userArgs []string) (string, bool) {
 	for i, arg := range userArgs {
 		if arg == "--" {
 			continue
@@ -96,16 +112,42 @@ func HasTaskPrompt(userArgs []string) bool {
 		if i > 0 && strings.HasPrefix(userArgs[i-1], "-") {
 			continue
 		}
-		return true
+		return arg, true
 	}
-	return false
+	return "", false
+}
+
+// managementCommand reports whether userArgs start with a registered
+// management subcommand for this agent.
+func (a Agent) managementCommand(userArgs []string) (string, bool) {
+	arg, ok := firstPositionalArg(userArgs)
+	if !ok {
+		return "", false
+	}
+	for _, cmd := range a.ManagementCommands {
+		if arg == cmd {
+			return arg, true
+		}
+	}
+	return "", false
+}
+
+// HasTaskPrompt reports whether userArgs include a positional task prompt
+// rather than only agent flags (e.g. --reasoning-effort high).
+func HasTaskPrompt(userArgs []string) bool {
+	_, ok := firstPositionalArg(userArgs)
+	return ok
 }
 
 // NeedsInteractiveSSH reports whether the guest session should allocate a TTY.
 // Registered agents get a TTY for their interactive TUI; task prompts and
-// crypt run one-shot commands (-c / -lc) run headlessly.
+// crypt run one-shot commands (-c / -lc) run headlessly. Management
+// subcommands that need a terminal (login) get a TTY; worker does not.
 func NeedsInteractiveSSH(ag Agent, userArgs []string) bool {
 	if _, err := Get(ag.Name); err == nil {
+		if cmd, ok := ag.managementCommand(userArgs); ok {
+			return cmd != "worker"
+		}
 		return !HasTaskPrompt(userArgs)
 	}
 	for _, arg := range userArgs {
@@ -119,6 +161,12 @@ func NeedsInteractiveSSH(ag Agent, userArgs []string) bool {
 // Command builds the full argument vector to run inside the VM: the agent
 // executable, its injected flags, then the user's own arguments.
 func (a Agent) Command(userArgs []string) []string {
+	if _, ok := a.managementCommand(userArgs); ok {
+		cmd := make([]string, 0, 1+len(userArgs))
+		cmd = append(cmd, a.Name)
+		cmd = append(cmd, userArgs...)
+		return cmd
+	}
 	inject := a.InjectFlags
 	if HasTaskPrompt(userArgs) && len(a.TaskInjectFlags) > 0 {
 		inject = append(append([]string{}, inject...), a.TaskInjectFlags...)

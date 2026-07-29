@@ -106,6 +106,10 @@ then boot it and authenticate the agent(s) you want to use.
    # Grok adds PATH to ~/.zshrc; Crypt uses login shells (~/.zprofile) for task runs
    anka run crypt-base bash -c "echo 'export PATH=\"\$HOME/.grok/bin:\$PATH\"' >> ~/.zprofile"
    anka run crypt-base bash -c "echo 'XAI_API_KEY=xai-Ah5cwp3..' >> ~/.zprofile" # use API keys when possible to avoid the CLI asking for MFA and hanging your agents
+   # Install the Cursor CLI (cursor-agent; also provides agent on PATH)
+   anka run crypt-base zsh -lc 'curl https://cursor.com/install -fsS | bash'
+   anka run crypt-base bash -c "echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zprofile"
+   anka run crypt-base zsh -lc 'cursor-agent login'  # follow the login prompts (API keys preferred)
    # stop the base VM
    anka stop crypt-base
    ```
@@ -182,6 +186,8 @@ crypt claude --mount . "keep going"                          # mount current dir
 crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple host directories
 crypt grok --mount . --mount ~/.grok/skills:grok-skills "fix the test"  # skills appear under /Volumes/My Shared Files/grok-skills
 crypt claude                                               # interactive; VM kept until crypt destroy
+crypt cursor-agent --mount . "fix the test"                 # Cursor Agent CLI
+crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project  # Cursor Cloud Agent worker
 crypt codex-fugu --mount . "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
 crypt grok --mount . "fix the failing test"                  # Grok Build
 crypt --name backend claude --mount . "add endpoint"         # separate named VM for another project
@@ -235,6 +241,79 @@ that cleanup the socket path can exist on disk with nothing listening — `nc -U
 returns "Connection refused" even though `test -S "$ATRIUM_SOCKET"` succeeds.
 This is strictly narrower than giving the VM host SSH access: no host shell,
 filesystem, or other service is reachable — only the listed socket(s).
+
+## Cursor Agent CLI and Cloud Agent workers
+
+Use `crypt cursor-agent` for the Cursor Agent CLI. Crypt injects `--force` and
+`--sandbox disabled` for chat and task runs (plus `--trust --print` for task
+prompts). Management subcommands such as `worker` and `login` pass through with
+no inject flags.
+
+```sh
+crypt cursor-agent --mount . "fix the test"
+crypt cursor-agent                              # interactive
+```
+
+Cursor's [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)
+runs the agent loop in Cursor's cloud, but it runs every tool call on a machine
+that you own. Put the worker in a Crypt VM so those tool calls stay inside the
+clone. Crypt keeps the clone, so worker state survives between sessions.
+
+Install and authenticate the Cursor CLI in your base VM first (see above), then
+start a worker. Clone the repo inside the VM so the host filesystem stays closed:
+
+```sh
+crypt --name cursor-worker run -- zsh -lc \
+  'git clone https://github.com/you/project.git ~/project'
+crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
+```
+
+Keep the terminal open. The worker runs until you stop it with Ctrl-C. The next
+run reuses the same clone and checkout:
+
+```sh
+crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
+```
+
+Open [cursor.com/agents](https://cursor.com/agents), select the machine in the
+environment dropdown, and send a task. In Slack, GitHub, or Linear, address it
+with `worker=crypt-vm`.
+
+To work on the host copy of a repo instead of a guest clone, mount it. The
+agent then edits your host files, so you give up part of the isolation:
+
+```sh
+crypt --name cursor-worker cursor-agent --mount .:project \
+  worker start --name crypt-vm
+```
+
+Crypt starts the command in the first mounted directory, and the worker reads
+the repo from the git remote there.
+
+For a devbox or a script, pass a personal user API key instead of a browser
+login. `--env` exports it in the guest:
+
+```sh
+crypt --name cursor-worker cursor-agent --env CURSOR_API_KEY="$CURSOR_API_KEY" \
+  worker start --name crypt-vm --worker-dir ~/project --api-key "$CURSOR_API_KEY"
+```
+
+> [!NOTE]
+> Prefer `crypt cursor-agent` over bare `agent`. Cursor also installs `agent` on
+> `PATH`, and `crypt agent` is Crypt's Grok Build alias. Whichever `agent` comes
+> first on `PATH` in the guest wins for bare `agent` calls.
+
+One worker serves one repository, because Cursor registers the repo from the git
+remote in the worker directory. Give each repo its own clone with `--name`.
+Delete a worker VM when you finish:
+
+```sh
+crypt --name cursor-worker destroy
+```
+
+If you apply [IP filtering](#network-isolation) to the base VM, the worker needs
+outbound HTTPS to `api2.cursor.sh` and `api2direct.cursor.sh`, plus
+`cloud-agent-artifacts.s3.us-east-1.amazonaws.com` for artifact uploads.
 
 ## How a run works
 

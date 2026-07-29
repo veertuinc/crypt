@@ -268,7 +268,7 @@ wait_for_mount_gone() {
 
 crypt_command_streams_to_terminal() {
 	case "${1:-}" in
-	claude | codex | codex-fugu | grok | agent)
+	claude | codex | codex-fugu | grok | agent | cursor-agent)
 		case "${2:-}" in
 		-h | --help) return 1 ;;
 		esac
@@ -524,7 +524,7 @@ test_version() {
 
 test_help() {
 	run_crypt --help
-	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "destroy" && output_contains "--socket"
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "cursor-agent" && output_contains "destroy" && output_contains "--socket"
 }
 
 test_subcommand_help() {
@@ -1033,6 +1033,7 @@ main() {
 	run_test "crypt --help" test_help
 	run_test "crypt claude --help" test_subcommand_help claude
 	run_test "crypt grok --help" test_subcommand_help grok
+	run_test "crypt cursor-agent --help" test_subcommand_help cursor-agent
 	run_test "crypt run --help" test_subcommand_help run
 	run_test "crypt destroy --help" test_subcommand_help destroy
 

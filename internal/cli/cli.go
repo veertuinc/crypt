@@ -33,6 +33,7 @@ Usage:
   crypt grok --mount . --mount ~/.atrium/bin "fix the failing test"
   crypt grok --socket ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET "from the VM"
   crypt --name frontend run -- /bin/bash -l
+  crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
   crypt destroy                                  # or crypt --name frontend destroy
 
 One-time setup:

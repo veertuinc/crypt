@@ -135,6 +135,42 @@ func TestAgentAliasInjectFlags(t *testing.T) {
 	}
 }
 
+func TestCursorAgentInjectFlags(t *testing.T) {
+	a, err := Get("cursor-agent")
+	if err != nil {
+		t.Fatalf("Get(cursor-agent): %v", err)
+	}
+
+	got := a.Command(nil)
+	want := []string{"cursor-agent", "--force", "--sandbox", "disabled"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(nil) = %v, want %v", got, want)
+	}
+
+	got = a.Command([]string{"fix the test"})
+	want = []string{
+		"cursor-agent",
+		"--force", "--sandbox", "disabled",
+		"--trust", "--print",
+		"fix the test",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(task) = %v, want %v", got, want)
+	}
+
+	got = a.Command([]string{"worker", "start", "--name", "crypt-vm"})
+	want = []string{"cursor-agent", "worker", "start", "--name", "crypt-vm"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(worker) = %v, want %v", got, want)
+	}
+
+	got = a.Command([]string{"login"})
+	want = []string{"cursor-agent", "login"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Command(login) = %v, want %v", got, want)
+	}
+}
+
 func TestCommandDoesNotMutateInjectFlags(t *testing.T) {
 	a := Agent{Name: "claude", InjectFlags: []string{"--yolo"}}
 
