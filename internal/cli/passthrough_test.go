@@ -50,11 +50,23 @@ func TestPassthroughAgentArgs(t *testing.T) {
 			args: []string{"crypt", "grok", "--mount", ".", "--", "--reasoning-effort", "high"},
 			want: []string{"--reasoning-effort", "high"},
 		},
+		{
+			name: "unlock-keychain flag stripped",
+			args: []string{"crypt", "cursor-agent", "--unlock-keychain", "login=admin", "worker", "start"},
+			want: []string{"worker", "start"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := passthroughAgentArgsFrom("grok", tc.args)
+			sub := "grok"
+			for _, a := range tc.args {
+				if a == "cursor-agent" {
+					sub = "cursor-agent"
+					break
+				}
+			}
+			got := passthroughAgentArgsFrom(sub, tc.args)
 			if len(got) != len(tc.want) {
 				t.Fatalf("passthroughAgentArgs() = %#v, want %#v", got, tc.want)
 			}

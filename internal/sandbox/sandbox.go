@@ -50,6 +50,12 @@ type Options struct {
 	// Sockets lists host UNIX sockets to forward into the guest over SSH.
 	// Each entry is HOSTPATH[:GUESTPATH[:ENVVAR]].
 	Sockets []string
+	// UnlockKeychain, when set, is NAME=PASSWORD used to unlock a guest
+	// keychain over SSH before the agent starts. NAME may be "login", a file
+	// under ~/Library/Keychains, or an absolute/~ path. SSH sessions leave
+	// keychains locked; tools that store tokens there (for example
+	// cursor-agent) need this unlock.
+	UnlockKeychain string
 	// NoLocal blocks VM-to-VM and VM-to-host network on the clone (anka network --no-local).
 	NoLocal bool
 	// Destroy deletes the clone when the run ends instead of keeping it on disk.
@@ -75,6 +81,10 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		return fmt.Errorf("Anka %d.%d+ is required for host directory mounts (found %s)", minMajor, minMinor, version)
 	}
 	if _, err := guestEnvExports(opts.GuestEnv); err != nil {
+		return err
+	}
+	keychainName, keychainPassword, err := parseUnlockKeychain(opts.UnlockKeychain)
+	if err != nil {
 		return err
 	}
 	socketSpecs, err := resolveSocketSpecs(opts.Sockets, sshUser())
@@ -276,6 +286,9 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 	}
 
 	if !suppressLifecycleLogs {
+		if keychainName != "" {
+			fmt.Fprintf(os.Stderr, "crypt: unlocking guest keychain %s\n", keychainName)
+		}
 		if guestDir != "" {
 			fmt.Fprintf(os.Stderr, "crypt: launching %s in %s\n", ag.Name, guestDir)
 		} else {
@@ -283,7 +296,7 @@ func Run(ctx context.Context, ag agent.Agent, userArgs []string, opts Options) e
 		}
 	}
 
-	runErr := runAgentSSH(ctx, conn, guestDir, opts.GuestEnv, socketSpecs, ag, userArgs)
+	runErr := runAgentSSH(ctx, conn, guestDir, opts.GuestEnv, socketSpecs, keychainName, keychainPassword, ag, userArgs)
 	if runErr != nil && !suppressLifecycleLogs {
 		// A non-zero agent exit is surfaced but is not a Crypt failure.
 		fmt.Fprintf(os.Stderr, "crypt: %s exited: %v\n", ag.Name, runErr)

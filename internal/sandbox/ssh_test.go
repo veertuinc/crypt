@@ -72,7 +72,7 @@ func TestAuthorizedKeyScriptCreatesAndAppends(t *testing.T) {
 }
 
 func TestRemoteCommandChangesDirectory(t *testing.T) {
-	got, err := remoteCommand("/Volumes/My Shared Files/crypt", nil, []string{"grok", "--always-approve"})
+	got, err := remoteCommand("/Volumes/My Shared Files/crypt", nil, []string{"grok", "--always-approve"}, "", "")
 	if err != nil {
 		t.Fatalf("remoteCommand() error: %v", err)
 	}
@@ -84,6 +84,103 @@ func TestRemoteCommandChangesDirectory(t *testing.T) {
 	}
 	if !strings.Contains(got, "IS_SANDBOX=1") {
 		t.Fatalf("remoteCommand() = %q, want IS_SANDBOX export", got)
+	}
+}
+
+func TestRemoteCommandUnlocksKeychainInSameSession(t *testing.T) {
+	got, err := remoteCommand("/work", []string{"FOO=bar"}, []string{"cursor-agent", "worker", "start"}, "login", "admin")
+	if err != nil {
+		t.Fatalf("remoteCommand() error: %v", err)
+	}
+	for _, want := range []string{
+		"security unlock-keychain",
+		"login.keychain-db",
+		" && ",
+		"exec",
+		"cursor-agent",
+		"export FOO=",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("remoteCommand() = %q, want substring %q", got, want)
+		}
+	}
+	// Unlock must come before exec, and every step must use && so a failed
+	// unlock cannot fall through a ";" to still run the agent.
+	unlockAt := strings.Index(got, "security unlock-keychain")
+	execAt := strings.Index(got, "exec")
+	if unlockAt < 0 || execAt < 0 || unlockAt > execAt {
+		t.Fatalf("remoteCommand() = %q, want unlock before exec", got)
+	}
+	between := got[unlockAt:execAt]
+	if strings.Contains(between, "; ") {
+		t.Fatalf("remoteCommand() = %q, unlock..exec must be &&-chained (no ;)", got)
+	}
+}
+
+func TestParseUnlockKeychain(t *testing.T) {
+	tests := []struct {
+		raw      string
+		wantName string
+		wantPass string
+		wantErr  bool
+	}{
+		{raw: "login=admin", wantName: "login", wantPass: "admin"},
+		{raw: "login=p=ass=word", wantName: "login", wantPass: "p=ass=word"},
+		{raw: "login.keychain-db=secret", wantName: "login.keychain-db", wantPass: "secret"},
+		{raw: "~/Library/Keychains/login.keychain-db=secret", wantName: "~/Library/Keychains/login.keychain-db", wantPass: "secret"},
+		{raw: "/Users/anka/Library/Keychains/login.keychain-db=secret", wantName: "/Users/anka/Library/Keychains/login.keychain-db", wantPass: "secret"},
+		{raw: "  login=admin  ", wantName: "login", wantPass: "admin"},
+		{raw: "", wantName: "", wantPass: ""},
+		{raw: "admin", wantErr: true},
+		{raw: "=admin", wantErr: true},
+		{raw: "login=", wantErr: true},
+		{raw: "-login=admin", wantErr: true},
+	}
+	for _, tc := range tests {
+		name, pass, err := parseUnlockKeychain(tc.raw)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("parseUnlockKeychain(%q) error = nil, want error", tc.raw)
+			}
+			continue
+		}
+		if err != nil || name != tc.wantName || pass != tc.wantPass {
+			t.Fatalf("parseUnlockKeychain(%q) = %q, %q, %v; want %q, %q, nil",
+				tc.raw, name, pass, err, tc.wantName, tc.wantPass)
+		}
+	}
+}
+
+func TestUnlockKeychainScript(t *testing.T) {
+	got := unlockKeychainScript("login", `p'ass`)
+	if !strings.Contains(got, `login.keychain-db`) {
+		t.Fatalf("unlockKeychainScript() = %q, want login.keychain-db", got)
+	}
+	if !strings.Contains(got, "name="+shellQuote("login")) {
+		t.Fatalf("unlockKeychainScript() = %q, want quoted name", got)
+	}
+	if !strings.Contains(got, "pass="+shellQuote(`p'ass`)) {
+		t.Fatalf("unlockKeychainScript() = %q, want quoted password", got)
+	}
+
+	got = unlockKeychainScript("~/custom.keychain-db", "secret")
+	if !strings.Contains(got, `~*)`) {
+		t.Fatalf("unlockKeychainScript(~ path) = %q, want ~ branch", got)
+	}
+
+	got = unlockKeychainScript("/tmp/custom.keychain-db", "secret")
+	if !strings.Contains(got, `/*)`) {
+		t.Fatalf("unlockKeychainScript(abs path) = %q, want /* branch", got)
+	}
+}
+
+func TestRemoteCommandOmitsUnlockWhenEmpty(t *testing.T) {
+	got, err := remoteCommand("", nil, []string{"/bin/echo", "hi"}, "", "")
+	if err != nil {
+		t.Fatalf("remoteCommand() error: %v", err)
+	}
+	if strings.Contains(got, "unlock-keychain") {
+		t.Fatalf("remoteCommand() = %q, did not want unlock-keychain", got)
 	}
 }
 

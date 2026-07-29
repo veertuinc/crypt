@@ -88,10 +88,12 @@ func logSSHProgress(suppress bool, format string, args ...any) {
 // runAgentSSH launches the agent inside the guest over SSH. Interactive runs
 // allocate a TTY; task prompts run headlessly without forwarding host stdin.
 // Any forwarded host sockets are exposed to the guest over the same connection.
-func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []string, sockets []socketSpec, ag agent.Agent, userArgs []string) error {
+// When unlockName is set, the keychain is unlocked in this same SSH session
+// before the agent starts (a prior SSH unlock does not stay unlocked).
+func runAgentSSH(ctx context.Context, conn sshConn, guestDir string, guestEnv []string, sockets []socketSpec, unlockName, unlockPassword string, ag agent.Agent, userArgs []string) error {
 	argv := ag.Command(userArgs)
 	guestEnv = append(append([]string{}, guestEnv...), socketEnvExports(sockets)...)
-	remote, err := remoteCommand(guestDir, guestEnv, argv)
+	remote, err := remoteCommand(guestDir, guestEnv, argv, unlockName, unlockPassword)
 	if err != nil {
 		return err
 	}
@@ -115,6 +117,38 @@ func runSSH(ctx context.Context, conn sshConn, remoteCommand string, forwards []
 		cmd.Stdin = os.Stdin
 	}
 	return cmd.Run()
+}
+
+// parseUnlockKeychain parses NAME=PASSWORD. NAME may be "login", a file name
+// under ~/Library/Keychains, or an absolute / ~/ path. Empty raw is a no-op.
+func parseUnlockKeychain(raw string) (name, password string, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", nil
+	}
+	name, password, ok := strings.Cut(raw, "=")
+	name = strings.TrimSpace(name)
+	if !ok || name == "" || password == "" {
+		return "", "", fmt.Errorf("--unlock-keychain requires NAME=PASSWORD (for example login=admin)")
+	}
+	if strings.HasPrefix(name, "-") {
+		return "", "", fmt.Errorf("--unlock-keychain name %q looks like a flag", name)
+	}
+	return name, password, nil
+}
+
+// unlockKeychainScript builds the guest shell that unlocks the named keychain.
+// "login" resolves to login.keychain-db (with login.keychain fallback). Bare
+// names resolve under ~/Library/Keychains. Absolute and ~/ paths are used as-is.
+func unlockKeychainScript(name, password string) string {
+	return "name=" + shellQuote(name) + "; pass=" + shellQuote(password) + "; " +
+		`case "$name" in ` +
+		`login) kc="$HOME/Library/Keychains/login.keychain-db"; [ -f "$kc" ] || kc="$HOME/Library/Keychains/login.keychain" ;; ` +
+		`/*) kc="$name" ;; ` +
+		`~*) kc="${name/#\~/$HOME}" ;; ` +
+		`*) kc="$HOME/Library/Keychains/$name" ;; ` +
+		`esac; ` +
+		`security unlock-keychain -p "$pass" "$kc"`
 }
 
 // prepareGuestSockets creates parent directories and removes any stale guest
@@ -322,38 +356,56 @@ func sshAccessCommand(user, ip, keyPath string) string {
 }
 
 // remoteCommand builds the single command string SSH runs in the guest: a
-// login shell that cd's into the mounted directory and execs argv.
-func remoteCommand(guestDir string, guestEnv []string, argv []string) (string, error) {
+// login shell that optionally unlocks a keychain, cd's into the mounted
+// directory, and execs argv. Steps are joined with && so a failed unlock
+// stops the agent. Unlock must share this SSH session; a separate prior SSH
+// unlock does not keep the keychain open for the agent.
+func remoteCommand(guestDir string, guestEnv []string, argv []string, unlockName, unlockPassword string) (string, error) {
 	quoted := make([]string, len(argv))
 	for i, token := range argv {
 		quoted[i] = shellQuote(token)
 	}
-	envPrefix, err := guestEnvExports(guestEnv)
+	exports, err := guestEnvExportSteps(guestEnv)
 	if err != nil {
 		return "", err
 	}
-	inner := envPrefix + "exec " + strings.Join(quoted, " ")
+	var steps []string
 	if guestDir != "" {
-		inner = "cd " + shellQuote(guestDir) + " && " + inner
+		steps = append(steps, "cd "+shellQuote(guestDir))
 	}
-	return "zsh -lc " + shellQuote(inner), nil
+	if unlockName != "" {
+		steps = append(steps, unlockKeychainScript(unlockName, unlockPassword))
+	}
+	steps = append(steps, exports...)
+	steps = append(steps, "exec "+strings.Join(quoted, " "))
+	return "zsh -lc " + shellQuote(strings.Join(steps, " && ")), nil
 }
 
 var guestEnvKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// guestEnvExports builds export statements for the guest login shell. IS_SANDBOX
-// is always set so agents know they are running inside Crypt's VM.
-func guestEnvExports(guestEnv []string) (string, error) {
+// guestEnvExportSteps returns individual export commands for the guest shell.
+// IS_SANDBOX is always set so agents know they are running inside Crypt's VM.
+func guestEnvExportSteps(guestEnv []string) ([]string, error) {
 	exports := []string{"export IS_SANDBOX=1"}
 	for _, pair := range guestEnv {
 		key, value, ok := strings.Cut(pair, "=")
 		if !ok || key == "" {
-			return "", fmt.Errorf("invalid --env %q: expected KEY=VALUE", pair)
+			return nil, fmt.Errorf("invalid --env %q: expected KEY=VALUE", pair)
 		}
 		if !guestEnvKeyPattern.MatchString(key) {
-			return "", fmt.Errorf("invalid --env key %q: must match [A-Za-z_][A-Za-z0-9_]*", key)
+			return nil, fmt.Errorf("invalid --env key %q: must match [A-Za-z_][A-Za-z0-9_]*", key)
 		}
 		exports = append(exports, "export "+key+"="+shellQuote(value))
+	}
+	return exports, nil
+}
+
+// guestEnvExports builds a semicolon-joined export prefix (for validation and
+// tests). Prefer guestEnvExportSteps when composing &&-chained remote commands.
+func guestEnvExports(guestEnv []string) (string, error) {
+	exports, err := guestEnvExportSteps(guestEnv)
+	if err != nil {
+		return "", err
 	}
 	return strings.Join(exports, "; ") + "; ", nil
 }

@@ -109,7 +109,8 @@ then boot it and authenticate the agent(s) you want to use.
    # Install the Cursor CLI (cursor-agent; also provides agent on PATH)
    anka run crypt-base zsh -lc 'curl https://cursor.com/install -fsS | bash'
    anka run crypt-base bash -c "echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zprofile"
-   anka run crypt-base zsh -lc 'cursor-agent login'  # follow the login prompts (API keys preferred)
+   anka run crypt-base zsh -lc 'cursor-agent login'  # follow the login prompts
+   # At run time pass --unlock-keychain login=PASSWORD (SSH leaves the keychain locked)
    # stop the base VM
    anka stop crypt-base
    ```
@@ -187,7 +188,7 @@ crypt claude --mount . --mount ~/.atrium/bin "keep going"    # mount multiple ho
 crypt grok --mount . --mount ~/.grok/skills:grok-skills "fix the test"  # skills appear under /Volumes/My Shared Files/grok-skills
 crypt claude                                               # interactive; VM kept until crypt destroy
 crypt cursor-agent --mount . "fix the test"                 # Cursor Agent CLI
-crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project  # Cursor Cloud Agent worker
+crypt --name cursor-worker cursor-agent --unlock-keychain login=admin worker start --name crypt-vm  # Cursor worker
 crypt codex-fugu --mount . "investigate the flaky test"      # Sakana Fugu (codex -p fugu)
 crypt grok --mount . "fix the failing test"                  # Grok Build
 crypt --name backend claude --mount . "add endpoint"         # separate named VM for another project
@@ -207,6 +208,7 @@ Flags:
 | `--mount`    | *(none)* | Host directory to share with the VM (repeatable; pass `.` for the current directory; optional `:folder_name` under `/Volumes/My Shared Files`) |
 | `--env`      | *(none)* | Environment variable to export in the guest before launching the agent (repeatable; `KEY=VALUE`) |
 | `--socket`   | *(none)* | Forward a host UNIX socket into the guest over the existing SSH connection (repeatable; `HOSTPATH[:GUESTPATH[:ENVVAR]]`) |
+| `--unlock-keychain` | *(none)* | Unlock a guest keychain before launch: `NAME=PASSWORD` (`login`, a file under `~/Library/Keychains`, or a path; also reads `CRYPT_UNLOCK_KEYCHAIN`) |
 | `--destroy`  | `false`      | Delete the clone when the run ends (default: keep until `crypt destroy`) |
 <!-- | `--no-local` | `false`      | Block VM-to-VM and VM-to-host network on the clone (Anka Enterprise)   | -->
 
@@ -259,23 +261,41 @@ runs the agent loop in Cursor's cloud, but it runs every tool call on a machine
 that you own. Put the worker in a Crypt VM so those tool calls stay inside the
 clone. Crypt keeps the clone, so worker state survives between sessions.
 
-Install and authenticate the Cursor CLI in your base VM first (see above), then
+Crypt launches agents over SSH. macOS does not unlock the login keychain for
+SSH sessions, so browser/`cursor-agent login` auth often fails with:
+
+```text
+Error: Your macOS login keychain is locked.
+```
+
+Pass `--unlock-keychain NAME=PASSWORD`. `NAME` is usually `login` (the macOS
+login keychain). The password is the guest user's login password (often `admin`
+on Anka templates). Crypt unlocks the keychain in the same SSH session as the
+agent (a separate unlock does not stay open). You can also set
+`CRYPT_UNLOCK_KEYCHAIN=login=admin` instead of the flag.
+
+In the Cursor dashboard, open
+[Cloud Agents → Environments](https://cursor.com/dashboard/cloud-agents?view=my-machines#environments)
+and turn on **Enable Self-Hosted Pool**. Workers do not show up until that
+setting is on.
+
+Install and authenticate the Cursor CLI in the base VM first (see above), then
 start a worker. Clone the repo inside the VM so the host filesystem stays closed:
 
 ```sh
 crypt --name cursor-worker run -- zsh -lc \
   'git clone https://github.com/you/project.git ~/project'
-crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
+crypt --name cursor-worker cursor-agent --unlock-keychain login=admin \
+  worker start --name crypt-vm --worker-dir ~/project
 ```
 
 Keep the terminal open. The worker runs until you stop it with Ctrl-C. The next
-run reuses the same clone and checkout:
+run reuses the same clone and checkout (pass `--unlock-keychain` again; SSH
+locks the keychain on each new session).
 
-```sh
-crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
-```
-
-Open [cursor.com/agents](https://cursor.com/agents), select the machine in the
+Confirm the machine appears under
+[My Machines](https://cursor.com/dashboard/cloud-agents?view=my-machines#environments).
+Then open [cursor.com/agents](https://cursor.com/agents), select it in the
 environment dropdown, and send a task. In Slack, GitHub, or Linear, address it
 with `worker=crypt-vm`.
 
@@ -283,18 +303,20 @@ To work on the host copy of a repo instead of a guest clone, mount it. The
 agent then edits your host files, so you give up part of the isolation:
 
 ```sh
-crypt --name cursor-worker cursor-agent --mount .:project \
+crypt --name cursor-worker cursor-agent --mount .:project --unlock-keychain login=admin \
   worker start --name crypt-vm
 ```
 
 Crypt starts the command in the first mounted directory, and the worker reads
 the repo from the git remote there.
 
-For a devbox or a script, pass a personal user API key instead of a browser
-login. `--env` exports it in the guest:
+You can also pass a personal user API key from
+[Cursor Dashboard → API Keys](https://cursor.com/dashboard/api). Combine it with
+`--unlock-keychain` when the CLI still touches the keychain over SSH:
 
 ```sh
-crypt --name cursor-worker cursor-agent --env CURSOR_API_KEY="$CURSOR_API_KEY" \
+crypt --name cursor-worker cursor-agent --unlock-keychain login=admin \
+  --env CURSOR_API_KEY="$CURSOR_API_KEY" \
   worker start --name crypt-vm --worker-dir ~/project --api-key "$CURSOR_API_KEY"
 ```
 
@@ -302,6 +324,9 @@ crypt --name cursor-worker cursor-agent --env CURSOR_API_KEY="$CURSOR_API_KEY" \
 > Prefer `crypt cursor-agent` over bare `agent`. Cursor also installs `agent` on
 > `PATH`, and `crypt agent` is Crypt's Grok Build alias. Whichever `agent` comes
 > first on `PATH` in the guest wins for bare `agent` calls.
+>
+> The password appears in the host process list when you pass the flag. Prefer
+> `CRYPT_UNLOCK_KEYCHAIN` in a private environment when that matters.
 
 One worker serves one repository, because Cursor registers the repo from the git
 remote in the worker directory. Give each repo its own clone with `--name`.

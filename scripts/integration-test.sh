@@ -28,6 +28,7 @@
 #   CRYPT_INTERACTIVE_TIMEOUT  seconds for interactive sessions (default: 300)
 #   CRYPT_SESSION_DIR      session store for this run (default: $WORK_ROOT/sessions)
 #   CRYPT_STREAM_OUTPUT      set to 0 to capture output silently (default: 1, stream live)
+#   CRYPT_ANKA_PASSWORD      guest login password for --unlock-keychain tests (default: admin)
 
 set -uo pipefail
 
@@ -40,6 +41,7 @@ CRYPT_AGENT_TIMEOUT="${CRYPT_AGENT_TIMEOUT:-300}"
 CRYPT_INTERACTIVE_TIMEOUT="${CRYPT_INTERACTIVE_TIMEOUT:-300}"
 CRYPT_AGENT_PROMPT="${CRYPT_AGENT_PROMPT:-Reply with exactly the word CRYPT_OK and nothing else.}"
 CRYPT_STREAM_OUTPUT="${CRYPT_STREAM_OUTPUT:-1}"
+CRYPT_ANKA_PASSWORD="${CRYPT_ANKA_PASSWORD:-admin}"
 
 TESTS_RUN=0
 TESTS_PASSED=0
@@ -413,12 +415,12 @@ run_crypt() {
 
 output_contains() {
 	local pattern="$1"
-	grep -Fq "$pattern" "$CRYPT_LAST_OUTPUT"
+	grep -Fq -- "$pattern" "$CRYPT_LAST_OUTPUT"
 }
 
 output_not_contains() {
 	local pattern="$1"
-	! grep -Fq "$pattern" "$CRYPT_LAST_OUTPUT"
+	! grep -Fq -- "$pattern" "$CRYPT_LAST_OUTPUT"
 }
 
 output_line_equals() {
@@ -524,7 +526,7 @@ test_version() {
 
 test_help() {
 	run_crypt --help
-	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "cursor-agent" && output_contains "destroy" && output_contains "--socket"
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "claude" && output_contains "cursor-agent" && output_contains "destroy" && output_contains "--socket" && output_contains "--unlock-keychain"
 }
 
 test_subcommand_help() {
@@ -601,6 +603,65 @@ test_run_env() {
 
 	run_crypt run --env NOTVALID -- /bin/echo fail
 	[[ "$CRYPT_LAST_EXIT" -ne 0 ]] && output_contains "invalid --env" || return 1
+
+	run_crypt destroy
+}
+
+test_run_unlock_keychain() {
+	# Invalid NAME=PASSWORD is rejected before the guest command runs.
+	run_crypt run --unlock-keychain 'not-a-spec' -- /bin/echo CRYPT_SHOULD_NOT_RUN
+	[[ "$CRYPT_LAST_EXIT" -ne 0 ]] &&
+		output_contains "NAME=PASSWORD" &&
+		output_not_contains "CRYPT_SHOULD_NOT_RUN" || return 1
+
+	# With unlock in the same SSH session, add+read a generic password.
+	run_crypt run --unlock-keychain "login=$CRYPT_ANKA_PASSWORD" -- /bin/zsh -lc \
+		'security delete-generic-password -a crypt-it -s crypt-it >/dev/null 2>&1 || true
+		 security add-generic-password -a crypt-it -s crypt-it -w crypt-secret -T /usr/bin/security
+		 security find-generic-password -a crypt-it -s crypt-it -w
+		 echo CRYPT_KC_OK'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "unlocking guest keychain login" &&
+		output_contains "crypt-secret" &&
+		output_contains "CRYPT_KC_OK" || return 1
+
+	# Relock, then a new SSH session without --unlock-keychain cannot read the item.
+	# This guards the regression where unlock ran in a prior SSH session only.
+	run_crypt run --unlock-keychain "login=$CRYPT_ANKA_PASSWORD" -- /bin/zsh -lc \
+		'kc="$HOME/Library/Keychains/login.keychain-db"
+		 [ -f "$kc" ] || kc="$HOME/Library/Keychains/login.keychain"
+		 security lock-keychain "$kc"
+		 echo CRYPT_KC_RELOCKED'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_KC_RELOCKED" || return 1
+
+	run_crypt run -- /bin/zsh -lc \
+		'if security find-generic-password -a crypt-it -s crypt-it -w >/dev/null 2>&1; then
+		   echo CRYPT_KC_STILL_OPEN
+		 else
+		   echo CRYPT_KC_LOCKED_NEW_SESSION
+		 fi'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "CRYPT_KC_LOCKED_NEW_SESSION" &&
+		output_not_contains "CRYPT_KC_STILL_OPEN" || return 1
+
+	# Persistent flag before the subcommand unlocks in the new session again.
+	run_crypt --unlock-keychain "login=$CRYPT_ANKA_PASSWORD" run -- /bin/zsh -lc \
+		'security find-generic-password -a crypt-it -s crypt-it -w; echo CRYPT_KC_FLAG_BEFORE'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "crypt-secret" &&
+		output_contains "CRYPT_KC_FLAG_BEFORE" || return 1
+
+	# CRYPT_UNLOCK_KEYCHAIN is equivalent to the flag.
+	CRYPT_UNLOCK_KEYCHAIN="login=$CRYPT_ANKA_PASSWORD" run_crypt run -- /bin/zsh -lc \
+		'security find-generic-password -a crypt-it -s crypt-it -w; echo CRYPT_KC_FROM_ENV'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] &&
+		output_contains "crypt-secret" &&
+		output_contains "CRYPT_KC_FROM_ENV" || return 1
+
+	# Cleanup the test item while unlocked, then destroy the clone.
+	run_crypt run --unlock-keychain "login=$CRYPT_ANKA_PASSWORD" -- /bin/zsh -lc \
+		'security delete-generic-password -a crypt-it -s crypt-it >/dev/null 2>&1 || true; echo CRYPT_KC_CLEAN'
+	[[ "$CRYPT_LAST_EXIT" -eq 0 ]] && output_contains "CRYPT_KC_CLEAN" || return 1
 
 	run_crypt destroy
 }
@@ -1049,6 +1110,9 @@ main() {
 
 	new_test_dir "run-env"
 	run_test "run --env exports guest variables" test_run_env
+
+	new_test_dir "run-unlock-keychain"
+	run_test "run --unlock-keychain unlocks guest login keychain" test_run_unlock_keychain
 
 	if host_unix_nc_supported; then
 		new_test_dir "run-socket"

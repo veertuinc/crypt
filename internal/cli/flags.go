@@ -1,40 +1,51 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 	"github.com/veertuinc/crypt/internal/sandbox"
 )
 
 // config holds flags shared across the crypt command tree.
 type config struct {
-	name       string
-	baseVM     string
-	cpu        uint32
-	memory     uint32
-	mountPaths  []string
-	envVars     []string
-	socketSpecs []string
-	noLocal     bool
-	destroy     bool
+	name           string
+	baseVM         string
+	cpu            uint32
+	memory         uint32
+	mountPaths     []string
+	envVars        []string
+	socketSpecs    []string
+	unlockKeychain string
+	noLocal        bool
+	destroy        bool
 }
 
 func (c config) runOptions() sandbox.Options {
+	unlock := c.unlockKeychain
+	if unlock == "" {
+		unlock = os.Getenv("CRYPT_UNLOCK_KEYCHAIN")
+	}
 	return sandbox.Options{
-		BaseVM:     c.baseVM,
-		Name:       c.name,
-		CPU:        c.cpu,
-		Memory:     c.memory,
-		MountPaths: c.mountPaths,
-		GuestEnv:   c.envVars,
-		Sockets:    c.socketSpecs,
-		NoLocal:    c.noLocal,
-		Destroy:    c.destroy,
+		BaseVM:         c.baseVM,
+		Name:           c.name,
+		CPU:            c.cpu,
+		Memory:         c.memory,
+		MountPaths:     c.mountPaths,
+		GuestEnv:       c.envVars,
+		Sockets:        c.socketSpecs,
+		UnlockKeychain: unlock,
+		NoLocal:        c.noLocal,
+		Destroy:        c.destroy,
 	}
 }
 
 func (c *config) bindPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&c.name, "name", "", "clone VM name (default: crypt-clone-N, reused per directory)")
 	cmd.PersistentFlags().StringVar(&c.baseVM, "vm", defaultBaseVM, "base Anka VM to clone from on first use")
+	// Persistent so `crypt --unlock-keychain login=admin cursor-agent ...` works
+	// (same form as --name before the subcommand).
+	cmd.PersistentFlags().StringVar(&c.unlockKeychain, "unlock-keychain", "", "unlock a guest keychain before launching: NAME=PASSWORD (NAME is login, a file under ~/Library/Keychains, or a path; also reads CRYPT_UNLOCK_KEYCHAIN)")
 }
 
 func (c *config) bindRunFlags(cmd *cobra.Command) {

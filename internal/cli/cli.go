@@ -33,7 +33,7 @@ Usage:
   crypt grok --mount . --mount ~/.atrium/bin "fix the failing test"
   crypt grok --socket ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET "from the VM"
   crypt --name frontend run -- /bin/bash -l
-  crypt --name cursor-worker cursor-agent worker start --name crypt-vm --worker-dir ~/project
+  crypt --name cursor-worker cursor-agent --unlock-keychain login=admin worker start --name crypt-vm
   crypt destroy                                  # or crypt --name frontend destroy
 
 One-time setup:
@@ -58,6 +58,10 @@ Flags:
                  HOSTPATH[:GUESTPATH[:ENVVAR]]). Use when a host app exposes a
                  .sock file that virtiofs cannot mount. Optionally bind an env
                  var (for example ~/.atrium/ipc/stable.sock::ATRIUM_SOCKET).
+  --unlock-keychain NAME=PASSWORD
+                 Unlock a guest keychain before launching (SSH leaves it
+                 locked). NAME is login, a file under ~/Library/Keychains,
+                 or a path. Also reads CRYPT_UNLOCK_KEYCHAIN.
   --destroy      Delete the clone when the run ends (default: keep until crypt destroy).
   --no-local     Block VM-to-host and VM-to-VM network on the clone (Anka Enterprise).
   --vm NAME      Base VM to clone (default: crypt-base).

@@ -16,8 +16,9 @@ var cryptRootFlags = flagSet{
 		"version": true,
 	},
 	values: map[string]bool{
-		"name": true,
-		"vm":   true,
+		"name":            true,
+		"vm":              true,
+		"unlock-keychain": true,
 	},
 }
 
@@ -27,11 +28,12 @@ var cryptRunFlags = flagSet{
 		"destroy":  true,
 	},
 	values: map[string]bool{
-		"cpu":    true,
-		"memory": true,
-		"mount":  true,
-		"env":    true,
-		"socket": true,
+		"cpu":             true,
+		"memory":          true,
+		"mount":           true,
+		"env":             true,
+		"socket":          true,
+		"unlock-keychain": true, // also allowed after the subcommand
 	},
 }
 
