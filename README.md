@@ -418,3 +418,11 @@ files *inside* the guest, and those writes propagate back to the host correctly.
 If you edit files on the host mid-session, prefer creating new files or atomically
 replacing them (write a temp file, then `mv` over the target) so the guest picks
 up the change.
+
+
+---
+
+## FAQs
+
+- GGML performance slow using llama.cpp, whisper.cpp, Ollama, and other apps? Check out https://github.com/veertuinc/anka-metal-unlock
+
