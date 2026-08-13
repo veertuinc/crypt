@@ -74,7 +74,7 @@ then boot it and authenticate the agent(s) you want to use.
    **Pull the public template from Docker Hub** (Apple Silicon; creates `crypt-base`):
 
    ```sh
-   anka --debug pull -o2 --tag 26.4.1-arm64 veertu/getting-started-templates https://registry.hub.docker.com
+   anka --debug pull -o2 --tag latest veertu/getting-started-templates https://registry.hub.docker.com
    anka clone getting-started-templates crypt-base
    ```
 
